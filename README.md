@@ -1,12 +1,12 @@
 <div align="center">
 
 ```
- ██████╗███████╗██████╗ ███╗   ███╗
-██╔════╝██╔════╝██╔══██╗████╗ ████║
-██║     ███████╗██████╔╝██╔████╔██║
-██║     ╚════██║██╔═══╝ ██║╚██╔╝██║
-╚██████╗███████║██║     ██║ ╚═╝ ██║
- ╚═════╝╚══════╝╚═╝     ╚═╝     ╚═╝
+██╗   ██╗ █████╗ ███╗   ██╗ ██████╗ ██╗   ██╗ █████╗ ██████╗ ██████╗
+██║   ██║██╔══██╗████╗  ██║██╔════╝ ██║   ██║██╔══██╗██╔══██╗██╔══██╗
+██║   ██║███████║██╔██╗ ██║██║  ███╗██║   ██║███████║██████╔╝██║  ██║
+╚██╗ ██╔╝██╔══██║██║╚██╗██║██║   ██║██║   ██║██╔══██║██╔══██╗██║  ██║
+ ╚████╔╝ ██║  ██║██║ ╚████║╚██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝
+  ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝
 ```
 
 ### Cloud Security Posture Management
@@ -23,12 +23,12 @@
 
 ---
 
-## What is CSPM?
+## What is Vanguard?
 
-CSPM continuously scans your AWS and Azure environments for security misconfigurations, scores your posture on a 0–100 scale, and fires alerts the moment something falls below your threshold — before attackers find it first.
+Vanguard continuously scans your AWS and Azure environments for security misconfigurations, scores your posture on a 0–100 scale, and fires alerts the moment something falls below your threshold — before attackers find it first.
 
 ```
-  Your Cloud Accounts          CSPM Engine               You
+  Your Cloud Accounts          Vanguard Engine            You
   ─────────────────    →    ──────────────────    →    ──────
   AWS · Azure               Scan → Score → Alert       Dashboard
   Hundreds of resources     500+ built-in rules        Real-time findings
