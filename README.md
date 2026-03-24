@@ -42,8 +42,8 @@ Vanguard continuously scans your AWS and Azure environments for security misconf
 > **Requirements:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) · Python 3
 
 ```bash
-git clone https://github.com/anishdoulagar/cspm.git
-cd cspm
+git clone https://github.com/anishdoulagar/Vanguard.git
+cd Vanguard
 ./setup.sh
 ```
 
@@ -156,7 +156,7 @@ docker compose down -v
 ## Project Structure
 
 ```
-cspm/
+Vanguard/
 ├── CSPM-Tool/                  # Backend
 │   ├── api/server.py           # All REST endpoints
 │   ├── auth/                   # JWT · bcrypt · role guards
