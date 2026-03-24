@@ -9,7 +9,7 @@
   ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝
 ```
 
-### Cloud Security Posture Management
+### Multi-Cloud Security Posture Management
 
 **Scan · Score · Alert · Remediate**
 
