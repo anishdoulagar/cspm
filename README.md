@@ -153,7 +153,64 @@ docker compose down -v
 
 ---
 
-## Project Structure
+## Running Without Docker
+
+For Linux / Kali Linux ARM (or any system without Docker):
+
+**1. Install dependencies**
+```bash
+sudo apt update && sudo apt install -y postgresql python3 python3-pip python3-venv nodejs npm git
+```
+> Node 18+ required. If `node -v` is below 18: `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt install -y nodejs`
+
+**2. Clone and enter the repo**
+```bash
+git clone https://github.com/anishdoulagar/Vanguard.git
+cd Vanguard
+```
+
+**3. Set up PostgreSQL**
+```bash
+sudo systemctl start postgresql
+sudo -u postgres psql -c "CREATE USER cspm_user WITH PASSWORD 'changeme_strong_password';"
+sudo -u postgres psql -c "CREATE DATABASE cspm OWNER cspm_user;"
+```
+
+**4. Configure environment**
+```bash
+cp .env.example .env
+python3 generate_keys.py
+```
+Then open `.env` and add this line (Docker sets it automatically, but here you need it explicitly):
+```env
+DATABASE_URL=postgresql://cspm_user:changeme_strong_password@localhost:5432/cspm
+```
+
+**5. Start the backend** _(in its own terminal)_
+```bash
+cd CSPM-Tool
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**6. Start the frontend** _(in a new terminal)_
+```bash
+cd CSPM-Dashboard
+npm install
+npm run dev -- --host
+```
+
+**7. Open the dashboard**
+
+Go to `http://localhost:5173` — the first account you create becomes superadmin.
+
+> **On every reboot:** start PostgreSQL (`sudo systemctl start postgresql`), then re-run the backend and frontend commands above.
+
+---
+
+## Commands
 
 ```
 Vanguard/
