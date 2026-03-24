@@ -293,6 +293,7 @@ export default function AuthPage({ onAuth, initialResetToken = null }) {
   // tab: "login" | "signup" | "forgot" | "reset"
   const [tab,        setTab]        = useState(initialResetToken ? "reset" : "login");
   const [name,       setName]       = useState("");
+  const [username,   setUsername]   = useState("");
   const [email,      setEmail]      = useState("");
   const [password,   setPassword]   = useState("");
   const [resetPw,    setResetPw]    = useState("");
@@ -304,7 +305,7 @@ export default function AuthPage({ onAuth, initialResetToken = null }) {
   function switchTab(t) {
     setTab(t);
     setError(null); setSuccess(null);
-    setName(""); setEmail(""); setPassword(""); setResetPw("");
+    setName(""); setUsername(""); setEmail(""); setPassword(""); setResetPw("");
   }
 
   function handleKeyDown(e) {
@@ -321,12 +322,12 @@ export default function AuthPage({ onAuth, initialResetToken = null }) {
   }
 
   async function handleLogin() {
-    if (!email || !password) { setError("Please fill in all fields."); return; }
+    if (!username || !password) { setError("Please fill in all fields."); return; }
     setLoading(true);
     try {
       const res  = await fetch(`${API}/auth/login`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.detail || "Login failed."); return; }
@@ -336,13 +337,14 @@ export default function AuthPage({ onAuth, initialResetToken = null }) {
   }
 
   async function handleSignup() {
-    if (!email || !password || !name) { setError("Please fill in all fields."); return; }
+    if (!username || !email || !password || !name) { setError("Please fill in all fields."); return; }
+    if (username.length < 3) { setError("Username must be at least 3 characters."); return; }
     if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
     setLoading(true);
     try {
       const res  = await fetch(`${API}/auth/signup`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({ username, email, password, name }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.detail || "Sign up failed."); return; }
@@ -389,8 +391,8 @@ export default function AuthPage({ onAuth, initialResetToken = null }) {
   function renderLoginForm() {
     return (
       <div style={S.form} onKeyDown={handleKeyDown}>
-        <TextField label="Email" type="email" placeholder="you@example.com"
-                   value={email} onChange={setEmail} />
+        <TextField label="Username" placeholder="your username"
+                   value={username} onChange={setUsername} />
         <PasswordField label="Password" value={password} onChange={setPassword} />
 
         <span
@@ -422,6 +424,8 @@ export default function AuthPage({ onAuth, initialResetToken = null }) {
       <div style={S.form} onKeyDown={handleKeyDown}>
         <TextField label="Full Name" placeholder="Your name"
                    value={name} onChange={setName} />
+        <TextField label="Username" placeholder="choose a username"
+                   value={username} onChange={setUsername} />
         <TextField label="Email" type="email" placeholder="you@example.com"
                    value={email} onChange={setEmail} />
         <PasswordField label="Password" value={password} onChange={setPassword} showStrength />

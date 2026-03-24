@@ -12,14 +12,15 @@ import asyncpg
 
 # ── Users ─────────────────────────────────────────────────────────────────────
 
-async def create_user(conn, email: str, password_hash: str, name: str) -> dict:
+async def create_user(conn, email: str, password_hash: str, name: str, username: str = None) -> dict:
     row = await conn.fetchrow(
         """
-        INSERT INTO users (email, password_hash, name)
-        VALUES ($1, $2, $3)
-        RETURNING id, email, name, is_admin, role, is_active, valid_until, created_at
+        INSERT INTO users (email, password_hash, name, username)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, email, name, username, is_admin, role, is_active, valid_until, created_at
         """,
-        email.lower().strip(), password_hash, name
+        email.lower().strip(), password_hash, name,
+        username.lower().strip() if username else None
     )
     return dict(row)
 
@@ -32,10 +33,18 @@ async def get_user_by_email(conn, email: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
+async def get_user_by_username(conn, username: str) -> Optional[dict]:
+    row = await conn.fetchrow(
+        "SELECT * FROM users WHERE username = $1",
+        username.lower().strip()
+    )
+    return dict(row) if row else None
+
+
 async def get_user_by_id(conn, user_id: str) -> Optional[dict]:
     row = await conn.fetchrow(
         """
-        SELECT id, email, name, is_admin, role, is_active, valid_until, created_at
+        SELECT id, email, name, username, is_admin, role, is_active, valid_until, created_at
         FROM users WHERE id = $1
         """,
         user_id
@@ -51,7 +60,7 @@ async def get_user_count(conn) -> int:
 async def get_all_users(conn) -> list:
     rows = await conn.fetch(
         """
-        SELECT u.id, u.email, u.name, u.is_admin, u.role,
+        SELECT u.id, u.email, u.name, u.username, u.is_admin, u.role,
                u.is_active, u.valid_until, u.created_at,
                COUNT(DISTINCT ca.id) AS account_count,
                COUNT(DISTINCT sr.id) AS scan_count

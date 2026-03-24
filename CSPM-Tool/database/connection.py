@@ -98,6 +98,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS valid_until TIMESTAMPTZ;
 -- Promote existing admins to superadmin on first migration
 UPDATE users SET role = 'superadmin' WHERE is_admin = true AND role = 'analyst';
 
+-- Username-based login (nullable to allow existing users)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL;
+
 -- Password reset tokens
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
     id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -175,18 +179,7 @@ CREATE TABLE IF NOT EXISTS alert_settings (
 );
 CREATE INDEX IF NOT EXISTS idx_alert_settings_account ON alert_settings(account_id);
 
--- Migrate alert_settings to be per-account (shared across team, not per user)
-ALTER TABLE alert_settings ALTER COLUMN user_id DROP NOT NULL;
-ALTER TABLE alert_settings DROP CONSTRAINT IF EXISTS alert_settings_user_id_account_id_key;
-DO $$ BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'alert_settings_account_id_key'
-    ) THEN
-        ALTER TABLE alert_settings ADD CONSTRAINT alert_settings_account_id_key UNIQUE (account_id);
-    END IF;
-END $$;
-
--- Revert alert_settings to per-user (each user manages their own alerts per account)
+-- alert_settings is per-user per-account
 DELETE FROM alert_settings WHERE user_id IS NULL;
 DO $$ BEGIN ALTER TABLE alert_settings ALTER COLUMN user_id SET NOT NULL; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 ALTER TABLE alert_settings DROP CONSTRAINT IF EXISTS alert_settings_account_id_key;

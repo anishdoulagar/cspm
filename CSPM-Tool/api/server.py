@@ -39,6 +39,7 @@ from database.models import (
     get_all_alert_settings_for_account,
     get_system_alert_settings, upsert_system_alert_settings,
     log_action, get_audit_log,
+    get_user_by_username,
 )
 from auth.password     import hash_password, verify_password
 from auth.jwt_handler  import create_token
@@ -143,12 +144,13 @@ app.add_middleware(
 # ── Request Models ────────────────────────────────────────────────────────────
 
 class SignupRequest(BaseModel):
+    username: str
     email:    str
     password: str
     name:     str = ""
 
 class LoginRequest(BaseModel):
-    email:    str
+    username: str
     password: str
 
 class AWSCredentials(BaseModel):
@@ -389,8 +391,13 @@ async def setup_status(conn=Depends(get_conn)):
 
 @app.post("/auth/signup", status_code=status.HTTP_201_CREATED)
 async def signup(req: SignupRequest, conn=Depends(get_conn)):
-    existing = await get_user_by_email(conn, req.email)
-    if existing:
+    if not req.username or not req.username.strip():
+        raise HTTPException(status_code=422, detail="Username is required.")
+    if len(req.username.strip()) < 3:
+        raise HTTPException(status_code=422, detail="Username must be at least 3 characters.")
+    if await get_user_by_username(conn, req.username):
+        raise HTTPException(status_code=409, detail="Username already taken.")
+    if await get_user_by_email(conn, req.email):
         raise HTTPException(status_code=409, detail="Email already registered.")
     if len(req.password) < 8:
         raise HTTPException(status_code=422, detail="Password must be at least 8 characters.")
@@ -402,7 +409,8 @@ async def signup(req: SignupRequest, conn=Depends(get_conn)):
 
     hashed = hash_password(req.password)
     user   = await create_user(conn, req.email, hashed,
-                                req.name or req.email.split("@")[0])
+                                req.name or req.username,
+                                username=req.username)
 
     if is_first_user:
         user = await update_user_role(conn, str(user["id"]), "superadmin")
@@ -414,11 +422,11 @@ async def signup(req: SignupRequest, conn=Depends(get_conn)):
 
 @app.post("/auth/login")
 async def login(req: LoginRequest, request: Request, conn=Depends(get_conn)):
-    user   = await get_user_by_email(conn, req.email)
+    user   = await get_user_by_username(conn, req.username)
     dummy  = "$2b$12$dummy.hash.to.prevent.timing.attacks.padding.xyz"
     stored = user["password_hash"] if user else dummy
     if not user or not verify_password(req.password, stored):
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
 
     if not user.get("is_active", True):
         raise HTTPException(status_code=403, detail="Your account has been disabled. Contact your administrator.")
