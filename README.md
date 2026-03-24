@@ -31,7 +31,7 @@ Vanguard continuously scans your AWS and Azure environments for security misconf
   Your Cloud Accounts          Vanguard Engine            You
   ─────────────────    →    ──────────────────    →    ──────
   AWS · Azure               Scan → Score → Alert       Dashboard
-  Hundreds of resources     500+ built-in rules        Real-time findings
+  Hundreds of resources     345+ built-in rules        Real-time findings
   Any region                Custom rules support       Email alerts
 ```
 
@@ -122,7 +122,7 @@ SMTP_FROM=you@example.com
 │  Backend       FastAPI · Python · asyncio               │
 │  Database      PostgreSQL 16                            │
 │  Auth          JWT (HS256) · bcrypt · Role middleware   │
-│  Infra         Docker · Docker Compose · Nginx          │
+│  Infra         Docker · Docker Compose · Nginx (prod)  │
 │  Cloud SDKs    boto3 (AWS) · azure-sdk (Azure)         │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -162,12 +162,12 @@ cspm/
 │   ├── auth/                   # JWT · bcrypt · role guards
 │   ├── connectors/             # AWS + Azure SDK collectors
 │   ├── database/               # Schema · models · migrations
-│   ├── policies/               # 500+ built-in rules + custom rules
+│   ├── policies/               # 345+ built-in rules + custom rules
 │   ├── scheduler/              # Background scan engine
 │   └── scoring/                # Posture score algorithm
 │
 ├── CSPM-Dashboard/             # Frontend
-│   └── src/pages/              # Dashboard · History · Alerts · Admin
+│   └── src/pages/              # Dashboard · History · Alerts · Policies · Admin
 │
 ├── docker-compose.yml          # Orchestration
 ├── .env.example                # Environment template
