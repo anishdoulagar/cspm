@@ -37,29 +37,11 @@ Vanguard continuously scans your AWS and Azure environments for security misconf
 
 ---
 
-## ⚡ Quick Start
-
-> **Requirements:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) · Python 3
-
-```bash
-git clone https://github.com/anishdoulagar/Vanguard.git
-cd Vanguard
-./setup.sh
-```
-
-**That's it.** Dashboard is live at `http://localhost:5173`
-
-> The first account you register is automatically promoted to **superadmin**.
-
-> **Windows users:** run `python3 generate_keys.py` then `docker compose up --build -d` instead of `./setup.sh`
-
----
-
 ## Features
 
 | | Feature | Description |
 |---|---|---|
-| 🔍 | **Multi-Cloud Scanning** | AWS and Azure with 500+ built-in security rules |
+| 🔍 | **Multi-Cloud Scanning** | AWS and Azure with 345+ built-in security rules |
 | 📊 | **Security Scoring** | Per-service and overall posture score (0–100) |
 | 📈 | **Scan History** | Track posture over time, compare changes between scans |
 | 📤 | **Export Reports** | Download findings as CSV or JSON per scan |
@@ -86,6 +68,156 @@ ANALYST  ───────────────────────�
 VIEWER  ───────────────────────────────────────────────────────────  Read-only
              View results · See alert status · No edits
 ```
+
+---
+
+## Installation
+
+### Mac — with Docker
+
+> **Requirements:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) · Python 3
+
+```bash
+git clone https://github.com/anishdoulagar/Vanguard.git
+cd Vanguard
+./setup.sh
+```
+
+Dashboard is live at `http://localhost:5173`. The first account you create becomes superadmin.
+
+---
+
+### Linux / Kali — with Docker
+
+**1. Install Docker and Docker Compose**
+```bash
+sudo apt update
+sudo apt install -y docker.io docker-compose python3 git
+```
+
+**2. Start Docker and add your user**
+```bash
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker $(whoami)
+newgrp docker
+```
+
+**3. Clone and run**
+```bash
+git clone https://github.com/anishdoulagar/Vanguard.git
+cd Vanguard
+./setup.sh
+```
+
+Dashboard is live at `http://localhost:5173`.
+
+> **Every reboot:** run `sudo systemctl start docker` before starting the project.
+
+**Day-to-day commands:**
+```bash
+# Start
+docker-compose up -d
+
+# Stop
+docker-compose down
+
+# View logs
+docker-compose logs -f backend
+
+# Full reset (wipes all data)
+docker-compose down -v
+```
+
+---
+
+### Linux / Kali — without Docker
+
+**1. Install dependencies**
+```bash
+sudo apt update && sudo apt install -y postgresql python3 python3-pip python3-venv nodejs npm git
+```
+> Node 18+ required. If `node -v` is below 18: `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt install -y nodejs`
+
+**2. Clone the repo**
+```bash
+git clone https://github.com/anishdoulagar/Vanguard.git
+cd Vanguard
+```
+
+**3. Set up PostgreSQL**
+```bash
+sudo systemctl start postgresql
+sudo -u postgres psql -c "CREATE USER cspm_user WITH PASSWORD 'changeme_strong_password';"
+sudo -u postgres psql -c "CREATE DATABASE cspm OWNER cspm_user;"
+```
+
+**4. Configure environment**
+```bash
+cp .env.example .env
+python3 generate_keys.py
+```
+Open `.env` and add:
+```env
+DATABASE_URL=postgresql://cspm_user:changeme_strong_password@localhost:5432/cspm
+```
+
+**5. Start the backend** _(terminal 1)_
+```bash
+cd CSPM-Tool
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**6. Start the frontend** _(terminal 2)_
+```bash
+cd CSPM-Dashboard
+npm install
+npm run dev -- --host
+```
+
+Dashboard is live at `http://localhost:5173`.
+
+> **Every reboot:** start PostgreSQL (`sudo systemctl start postgresql`), then re-run the backend and frontend commands.
+
+---
+
+### Windows — with Docker
+
+**1. Install prerequisites**
+- [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/) — enable WSL 2 backend during install
+- [Python 3](https://www.python.org/downloads/) — check "Add to PATH" during install
+- [Git for Windows](https://git-scm.com/download/win)
+
+**2. Open PowerShell and run**
+```powershell
+git clone https://github.com/anishdoulagar/Vanguard.git
+cd Vanguard
+python generate_keys.py
+copy .env.example .env
+docker compose up --build -d
+```
+
+Dashboard is live at `http://localhost:5173`.
+
+**Day-to-day commands (PowerShell):**
+```powershell
+# Start
+docker compose up -d
+
+# Stop
+docker compose down
+
+# View logs
+docker compose logs -f backend
+
+# Full reset (wipes all data)
+docker compose down -v
+```
+
+> Docker Desktop must be running before you use any `docker compose` command on Windows.
 
 ---
 
@@ -129,88 +261,7 @@ SMTP_FROM=you@example.com
 
 ---
 
-## Commands
-
-```bash
-# First time setup
-./setup.sh
-
-# Start
-docker compose up -d
-
-# Stop
-docker compose down
-
-# View live logs
-docker logs cspm_backend -f
-
-# Rebuild after code changes
-docker compose up --build -d
-
-# ⚠️  Full reset (deletes all scan data)
-docker compose down -v
-```
-
----
-
-## Running Without Docker
-
-For Linux / Kali Linux ARM (or any system without Docker):
-
-**1. Install dependencies**
-```bash
-sudo apt update && sudo apt install -y postgresql python3 python3-pip python3-venv nodejs npm git
-```
-> Node 18+ required. If `node -v` is below 18: `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt install -y nodejs`
-
-**2. Clone and enter the repo**
-```bash
-git clone https://github.com/anishdoulagar/Vanguard.git
-cd Vanguard
-```
-
-**3. Set up PostgreSQL**
-```bash
-sudo systemctl start postgresql
-sudo -u postgres psql -c "CREATE USER cspm_user WITH PASSWORD 'changeme_strong_password';"
-sudo -u postgres psql -c "CREATE DATABASE cspm OWNER cspm_user;"
-```
-
-**4. Configure environment**
-```bash
-cp .env.example .env
-python3 generate_keys.py
-```
-Then open `.env` and add this line (Docker sets it automatically, but here you need it explicitly):
-```env
-DATABASE_URL=postgresql://cspm_user:changeme_strong_password@localhost:5432/cspm
-```
-
-**5. Start the backend** _(in its own terminal)_
-```bash
-cd CSPM-Tool
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
-```
-
-**6. Start the frontend** _(in a new terminal)_
-```bash
-cd CSPM-Dashboard
-npm install
-npm run dev -- --host
-```
-
-**7. Open the dashboard**
-
-Go to `http://localhost:5173` — the first account you create becomes superadmin.
-
-> **On every reboot:** start PostgreSQL (`sudo systemctl start postgresql`), then re-run the backend and frontend commands above.
-
----
-
-## Commands
+## Project Structure
 
 ```
 Vanguard/
@@ -229,7 +280,7 @@ Vanguard/
 ├── docker-compose.yml          # Orchestration
 ├── .env.example                # Environment template
 ├── generate_keys.py            # Secret key generator
-└── setup.sh                    # One-command setup
+└── setup.sh                    # One-command setup (Mac/Linux)
 ```
 
 ---
