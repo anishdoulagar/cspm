@@ -42,6 +42,19 @@
         --font-display: 'Orbitron', sans-serif;
         --font-ui:      'Rajdhani', sans-serif;
         --font-mono:    'JetBrains Mono', monospace;
+
+        /* ── Theme-aware component tokens ── */
+        --sidebar-border:    rgba(0,212,255,0.12);
+        --nav-divider:       rgba(255,230,0,0.06);
+        --nav-active-bg:     rgba(255,230,0,0.07);
+        --nav-active-glow:   rgba(255,230,0,0.5);
+        --admin-active-bg:   rgba(255,60,0,0.07);
+        --admin-active-glow: rgba(255,60,0,0.5);
+        --bottom-divider:    rgba(255,230,0,0.08);
+        --role-admin-bg:     rgba(255,230,0,0.08);
+        --role-admin-border: rgba(255,230,0,0.3);
+        --role-super-bg:     rgba(255,60,0,0.1);
+        --role-super-border: rgba(255,60,0,0.35);
       }
 
       html, body, #root {
@@ -205,19 +218,92 @@
 
       /* ── Light mode overrides ── */
       [data-theme="light"] {
-        --bg:      #f0f0f5;
-        --surface: #e4e4ec;
+        /* Surfaces — clean neutral-cool whites */
+        --bg:      #f0f4fa;
+        --surface: #e2e8f4;
         --card:    #ffffff;
-        --border:  #d0d0dc;
-        --accent:  #1a1a2e;
-        --accent2: #4a4a6a;
-        --accent3: #7a7a9a;
+        --border:  #c8d2e4;
+
+        /* Text — deep navy/slate, not harsh black */
+        --accent:  #0d1526;
+        --accent2: #3d4e6a;
+        --accent3: #7a8ea8;
+
+        /* Neons — shift to versions readable on light backgrounds */
+        /* Yellow → deep amber-gold (readable as text AND as fill) */
+        --cyan:    #c47f00;
+        --yellow:  #c47f00;
+        /* Green → forest green (dark enough on white) */
+        --green:   #16a34a;
+        /* Red stays readable */
+        --red:     #dc2626;
+        /* Orange → burnt orange */
+        --orange:  #c2410c;
+        /* Blue → strong blue */
+        --blue:    #1a6db8;
+        /* Purple stays */
+        --purple:  #7c3aed;
+        /* Magenta → crimson */
+        --magenta: #c0152a;
+
+        /* Glows — soft, warm shadows instead of neon halos */
+        --glow-cyan:    0 2px 8px rgba(196,127,0,0.25),  0 0 20px rgba(196,127,0,0.10);
+        --glow-magenta: 0 2px 8px rgba(192,21,42,0.25),  0 0 20px rgba(192,21,42,0.10);
+        --glow-green:   0 2px 8px rgba(22,163,74,0.25),  0 0 20px rgba(22,163,74,0.10);
+        --glow-red:     0 2px 8px rgba(220,38,38,0.25),  0 0 20px rgba(220,38,38,0.10);
+
+        /* Component tokens for light mode */
+        --sidebar-border:    rgba(0,0,0,0.08);
+        --nav-divider:       rgba(0,0,0,0.06);
+        --nav-active-bg:     rgba(196,127,0,0.09);
+        --nav-active-glow:   rgba(196,127,0,0.45);
+        --admin-active-bg:   rgba(192,21,42,0.07);
+        --admin-active-glow: rgba(192,21,42,0.45);
+        --bottom-divider:    rgba(0,0,0,0.07);
+        --role-admin-bg:     rgba(196,127,0,0.10);
+        --role-admin-border: rgba(196,127,0,0.35);
+        --role-super-bg:     rgba(192,21,42,0.08);
+        --role-super-border: rgba(192,21,42,0.30);
       }
+
       [data-theme="light"] body {
-        background-image:
-          linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px);
-        background-size: 40px 40px;
+        /* Subtle dot grid instead of yellow lines */
+        background-image: radial-gradient(circle, rgba(100,120,160,0.12) 1px, transparent 1px);
+        background-size: 28px 28px;
+      }
+
+      /* Scrollbar in light mode */
+      [data-theme="light"] ::-webkit-scrollbar-track { background: var(--bg); }
+      [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(196,127,0,0.35); }
+      [data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
+
+      /* Neon button sweep — amber tint in light mode */
+      [data-theme="light"] .neon-btn::after {
+        background: linear-gradient(90deg, transparent, rgba(196,127,0,0.15), transparent);
+      }
+
+      /* Card corner brackets — amber in light mode */
+      [data-theme="light"] .neon-card::before,
+      [data-theme="light"] .neon-card::after {
+        border-color: rgba(196,127,0,0.35);
+      }
+
+      /* Active nav pulse — amber */
+      [data-theme="light"] .nav-btn.active::before {
+        background: var(--cyan);
+        box-shadow: 0 0 8px rgba(196,127,0,0.5);
+      }
+
+      /* Input focus ring — amber */
+      [data-theme="light"] input:focus,
+      [data-theme="light"] select:focus {
+        border-color: var(--cyan) !important;
+        box-shadow: 0 0 0 2px rgba(196,127,0,0.18) !important;
+      }
+
+      /* Cards get a clean shadow instead of neon glow */
+      [data-theme="light"] .neon-card {
+        box-shadow: 0 1px 4px rgba(13,21,38,0.08), 0 4px 16px rgba(13,21,38,0.06);
       }
 
       /* ── Sidebar nav button animated left border ── */

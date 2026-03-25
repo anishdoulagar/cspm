@@ -267,7 +267,7 @@ export default function App() {
       {/* ── Sidebar ── */}
       <nav style={{
         width:"190px", flexShrink:0,
-        background:"var(--surface)", borderRight:"1px solid rgba(0,212,255,0.15)",
+        background:"var(--surface)", borderRight:"1px solid var(--sidebar-border)",
         display:"flex", flexDirection:"column",
         padding:"24px 0", position:"sticky", top:0, height:"100vh",
       }}>
@@ -285,7 +285,7 @@ export default function App() {
           }}>// CSPM v1.0</div>
         </div>
 
-        <div style={{ height:"1px", background:"rgba(255,230,0,0.06)", marginBottom:"8px" }} />
+        <div style={{ height:"1px", background:"var(--nav-divider)", marginBottom:"8px" }} />
 
         {NAV_ITEMS.filter(item =>
           !(user.role === "viewer" && item.id === "connect")
@@ -297,13 +297,13 @@ export default function App() {
               style={{
                 display:"flex", alignItems:"center", gap:"10px",
                 padding:"11px 20px", border:"none",
-                background: active ? "rgba(255,230,0,0.06)" : "transparent",
+                background: active ? "var(--nav-active-bg)" : "transparent",
                 color:      active ? "var(--cyan)" : "var(--accent2)",
                 fontFamily:"var(--font-ui)", fontWeight: active ? 700 : 500,
                 fontSize:"12px", letterSpacing:"0.08em",
                 cursor:"pointer", textAlign:"left", width:"100%",
                 borderLeft: "none",
-                textShadow: active ? "0 0 8px rgba(255,230,0,0.5)" : "none",
+                textShadow: active ? `0 0 8px var(--nav-active-glow)` : "none",
               }}>
               <Icon />{label}
             </button>
@@ -317,13 +317,12 @@ export default function App() {
               margin:"12px 20px 4px",
               display:"flex", alignItems:"center", gap:6,
             }}>
-              <div style={{ flex:1, height:"1px", background:"rgba(255,230,0,0.06)" }} />
+              <div style={{ flex:1, height:"1px", background:"var(--nav-divider)" }} />
               <span style={{
                 fontFamily:"var(--font-ui)", fontSize:"9px", fontWeight:700,
                 color:"var(--magenta)", letterSpacing:"0.12em",
-                textShadow:"0 0 6px rgba(255,0,122,0.5)",
               }}>ADMIN</span>
-              <div style={{ flex:1, height:"1px", background:"rgba(255,230,0,0.06)" }} />
+              <div style={{ flex:1, height:"1px", background:"var(--nav-divider)" }} />
             </div>
             {ADMIN_NAV_ITEMS.filter(item =>
               item.minRole === "admin" || user.role === "superadmin"
@@ -333,13 +332,13 @@ export default function App() {
                 <button key={id} onClick={() => setPage(id)} style={{
                   display:"flex", alignItems:"center", gap:"10px",
                   padding:"11px 20px", border:"none",
-                  background: active ? "rgba(255,60,0,0.06)" : "transparent",
+                  background: active ? "var(--admin-active-bg)" : "transparent",
                   color:      active ? "var(--magenta)" : "var(--accent2)",
                   fontFamily:"var(--font-ui)", fontWeight: active ? 700 : 500,
                   fontSize:"12px", letterSpacing:"0.08em",
                   cursor:"pointer", textAlign:"left", width:"100%",
                   borderLeft: "none",
-                  textShadow: active ? "0 0 8px rgba(255,60,0,0.5)" : "none",
+                  textShadow: active ? `0 0 8px var(--admin-active-glow)` : "none",
                   transition:"all 0.15s",
                 }}>
                   <Icon />{label}
@@ -351,7 +350,7 @@ export default function App() {
 
         {/* User + Logout */}
         <div style={{ marginTop:"auto" }}>
-          <div style={{ height:"1px", background:"rgba(255,230,0,0.06)", marginBottom:"12px" }} />
+          <div style={{ height:"1px", background:"var(--nav-divider)", marginBottom:"12px" }} />
           <div style={{ padding:"0 20px 8px" }}>
             <div style={{ color:"var(--accent)", fontSize:"12px",
                           fontFamily:"var(--font-ui)", fontWeight:600,
@@ -365,8 +364,8 @@ export default function App() {
               const roleColors = {
                 viewer:     { bg:"rgba(57,255,20,0.08)",  border:"rgba(57,255,20,0.3)",   text:"var(--green)" },
                 analyst:    { bg:"rgba(0,207,255,0.08)",  border:"rgba(0,207,255,0.3)",   text:"var(--blue)" },
-                admin:      { bg:"rgba(255,230,0,0.08)",  border:"rgba(255,230,0,0.3)",   text:"var(--cyan)" },
-                superadmin: { bg:"rgba(255,60,0,0.1)",    border:"rgba(255,60,0,0.35)",   text:"var(--magenta)" },
+                admin:      { bg:"var(--role-admin-bg)",  border:"var(--role-admin-border)", text:"var(--cyan)" },
+                superadmin: { bg:"var(--role-super-bg)",  border:"var(--role-super-border)", text:"var(--magenta)" },
               };
               const c = roleColors[user.role] || roleColors.analyst;
               return (
@@ -387,7 +386,7 @@ export default function App() {
             style={{
               width:"100%", padding:"10px 20px",
               background:"transparent",
-              border:"none", borderTop:"1px solid rgba(255,230,0,0.08)",
+              border:"none", borderTop:"1px solid var(--bottom-divider)",
               color:"var(--accent3)", cursor:"pointer",
               fontFamily:"var(--font-ui)", fontSize:"12px",
               textAlign:"left", letterSpacing:"0.08em", transition:"color 0.15s",
