@@ -174,16 +174,17 @@ async def mark_reset_token_used(conn, token_id: str) -> None:
 
 async def create_account(conn, user_id: str, name: str, cloud: str,
                          encrypted_creds: str, region: Optional[str],
-                         scan_interval_hours: int) -> dict:
+                         scan_interval_hours: int,
+                         category: str = "General") -> dict:
     row = await conn.fetchrow(
         """
         INSERT INTO cloud_accounts
-            (user_id, name, cloud, encrypted_creds, region, scan_interval_hours)
-        VALUES ($1, $2, $3, $4, $5, $6)
+            (user_id, name, cloud, encrypted_creds, region, scan_interval_hours, category)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id, user_id, name, cloud, region, scan_interval_hours,
-                  last_scanned_at, created_at
+                  last_scanned_at, created_at, category
         """,
-        user_id, name, cloud, encrypted_creds, region, scan_interval_hours
+        user_id, name, cloud, encrypted_creds, region, scan_interval_hours, category
     )
     return dict(row)
 
@@ -193,9 +194,9 @@ async def get_accounts_for_user(conn, user_id: str) -> list:
     rows = await conn.fetch(
         """
         SELECT id, user_id, name, cloud, region, scan_interval_hours,
-               last_scanned_at, created_at
+               last_scanned_at, created_at, category
         FROM cloud_accounts
-        ORDER BY created_at ASC
+        ORDER BY category ASC, created_at ASC
         """
     )
     return [dict(r) for r in rows]
@@ -220,16 +221,17 @@ async def get_account_with_creds(conn, account_id: str) -> Optional[dict]:
 
 
 async def update_account(conn, account_id: str, user_id: str,
-                         name: str, scan_interval_hours: int) -> Optional[dict]:
+                         name: str, scan_interval_hours: int,
+                         category: str = "General") -> Optional[dict]:
     """Any admin can update any account (no ownership check)."""
     row = await conn.fetchrow(
         """
         UPDATE cloud_accounts
-        SET name = $1, scan_interval_hours = $2
-        WHERE id = $3
-        RETURNING id, name, cloud, region, scan_interval_hours, last_scanned_at
+        SET name = $1, scan_interval_hours = $2, category = $3
+        WHERE id = $4
+        RETURNING id, name, cloud, region, scan_interval_hours, last_scanned_at, category
         """,
-        name, scan_interval_hours, account_id
+        name, scan_interval_hours, category, account_id
     )
     return dict(row) if row else None
 

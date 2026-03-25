@@ -658,6 +658,104 @@ export default function DashboardPage({ token, role, onScanComplete, onNavigate,
         </div>
       </Card>
 
+      {/* ── Category Metrics ── */}
+      {accounts.length > 0 && (() => {
+        const CAT_COLORS = {
+          Production:  { color: "#e05555", border: "rgba(224,85,85,0.3)",  bg: "rgba(224,85,85,0.06)"  },
+          Staging:     { color: "#d97b3a", border: "rgba(217,123,58,0.3)", bg: "rgba(217,123,58,0.06)" },
+          Development: { color: "#7b8cde", border: "rgba(123,140,222,0.3)",bg: "rgba(123,140,222,0.06)"},
+          Testing:     { color: "#c9a84c", border: "rgba(201,168,76,0.3)", bg: "rgba(201,168,76,0.06)" },
+          Sandbox:     { color: "#4caf7d", border: "rgba(76,175,125,0.3)", bg: "rgba(76,175,125,0.06)" },
+          General:     { color: "#8899aa", border: "rgba(136,153,170,0.3)",bg: "rgba(136,153,170,0.06)"},
+        };
+        function catStyle(cat) { return CAT_COLORS[cat] || CAT_COLORS.General; }
+        function scoreCol(s) {
+          if (s == null) return "var(--accent3)";
+          if (s >= 80) return "#4caf7d";
+          if (s >= 60) return "#c9a84c";
+          if (s >= 40) return "#d97b3a";
+          return "#e05555";
+        }
+
+        // Build category groups from accounts
+        const grouped = {};
+        accounts.forEach(a => {
+          const cat = a.category || "General";
+          if (!grouped[cat]) grouped[cat] = [];
+          grouped[cat].push(a);
+        });
+        const ORDER = ["Production","Staging","Development","Testing","Sandbox","General"];
+        const cats = [
+          ...ORDER.filter(c => grouped[c]),
+          ...Object.keys(grouped).filter(c => !ORDER.includes(c)),
+        ];
+
+        if (cats.length <= 1) return null; // no point showing if only 1 category
+
+        return (
+          <Card style={{ marginBottom: "16px" }}>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
+              <span style={{ color: "var(--accent)", fontFamily: "var(--font-display)",
+                             fontSize: "13px", fontWeight: 700, letterSpacing: "0.07em" }}>
+                CATEGORY METRICS
+              </span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(cats.length, 3)}, 1fr)`, gap: 1, background: "var(--border)" }}>
+              {cats.map(cat => {
+                const accs   = grouped[cat];
+                const s      = catStyle(cat);
+                const scanned = accs.filter(a => a.latest_score != null);
+                const avgScore = scanned.length
+                  ? Math.round(scanned.reduce((s, a) => s + a.latest_score, 0) / scanned.length)
+                  : null;
+                const crit = accs.reduce((s, a) => s + (a.finding_counts?.critical || 0), 0);
+                const high = accs.reduce((s, a) => s + (a.finding_counts?.high    || 0), 0);
+                const med  = accs.reduce((s, a) => s + (a.finding_counts?.medium  || 0), 0);
+                const low  = accs.reduce((s, a) => s + (a.finding_counts?.low     || 0), 0);
+                return (
+                  <div key={cat} style={{ padding: "18px 20px", background: "var(--surface)", borderLeft: `3px solid ${s.color}` }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                      <div>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 700,
+                                      color: s.color, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 2 }}>
+                          {cat}
+                        </div>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--accent3)" }}>
+                          {accs.length} account{accs.length !== 1 ? "s" : ""}
+                          {scanned.length < accs.length ? ` · ${accs.length - scanned.length} unscanned` : ""}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: 26, fontWeight: 800,
+                                      lineHeight: 1, color: scoreCol(avgScore) }}>
+                          {avgScore != null ? avgScore : "—"}
+                        </div>
+                        <div style={{ fontFamily: "var(--font-ui)", fontSize: 9, letterSpacing: "0.08em",
+                                      color: scoreCol(avgScore) }}>
+                          {avgScore != null ? (avgScore >= 80 ? "LOW RISK" : avgScore >= 60 ? "MED RISK" : avgScore >= 40 ? "HIGH RISK" : "CRITICAL") : "NO DATA"}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
+                      {[["CRIT", crit, SEV_COLOR.CRITICAL], ["HIGH", high, SEV_COLOR.HIGH],
+                        ["MED",  med,  SEV_COLOR.MEDIUM],  ["LOW",  low,  SEV_COLOR.LOW]].map(([lbl, val, col]) => (
+                        <div key={lbl} style={{ textAlign: "center", padding: "6px 4px", borderRadius: 5,
+                                                background: "var(--card)", border: "1px solid var(--border)" }}>
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 800,
+                                        color: val > 0 ? col : "var(--accent3)", lineHeight: 1 }}>{val}</div>
+                          <div style={{ fontFamily: "var(--font-ui)", fontSize: 8, color: col,
+                                        letterSpacing: "0.1em", marginTop: 2 }}>{lbl}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        );
+      })()}
+
       {/* ── Account Health Table ── */}
       <Card style={{ marginBottom: "16px" }}>
         <div style={{

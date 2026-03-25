@@ -139,6 +139,9 @@ CREATE TABLE IF NOT EXISTS cloud_accounts (
 );
 CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON cloud_accounts(user_id);
 
+-- Account categories (idempotent)
+ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'General';
+
 CREATE TABLE IF NOT EXISTS scan_results (
     id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id           UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -179,6 +179,7 @@ class CreateAccountRequest(BaseModel):
     name:                str
     cloud:               str
     scan_interval_hours: float = 24
+    category:            Optional[str] = "General"
     access_key_id:       Optional[str] = None
     secret_access_key:   Optional[str] = None
     region:              Optional[str] = "us-east-1"
@@ -190,6 +191,7 @@ class CreateAccountRequest(BaseModel):
 class UpdateAccountRequest(BaseModel):
     name:                str
     scan_interval_hours: float = 24
+    category:            Optional[str] = "General"
 
 class FindingStatusUpdate(BaseModel):
     finding_key: str
@@ -569,6 +571,7 @@ async def get_dashboard(
             "name":                 acc["name"],
             "cloud":                acc["cloud"],
             "region":               acc.get("region"),
+            "category":             acc.get("category") or "General",
             "scan_interval_hours":  acc["scan_interval_hours"],
             "last_scanned_at":      acc["last_scanned_at"].isoformat()
                                     if acc.get("last_scanned_at") else None,
@@ -721,6 +724,7 @@ async def add_account(req: CreateAccountRequest, request: Request,
         conn, user_id=str(user["id"]), name=req.name, cloud=req.cloud,
         encrypted_creds=encrypted, region=req.region if req.cloud == "aws" else None,
         scan_interval_hours=req.scan_interval_hours,
+        category=req.category or "General",
     )
     # Register with scheduler if interval > 0
     if req.scan_interval_hours > 0:
@@ -741,7 +745,8 @@ async def add_account(req: CreateAccountRequest, request: Request,
 async def update_account_route(account_id: str, req: UpdateAccountRequest,
                                 user=Depends(require_role("admin")), conn=Depends(get_conn)):
     account = await update_account(conn, account_id, str(user["id"]),
-                                    req.name, req.scan_interval_hours)
+                                    req.name, req.scan_interval_hours,
+                                    category=req.category or "General")
     if not account:
         raise HTTPException(status_code=404, detail="Account not found.")
 

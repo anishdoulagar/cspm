@@ -2,6 +2,56 @@ import { useState, useEffect } from "react";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+const CATEGORIES = ["Production", "Development", "Staging", "Testing", "Sandbox", "General"];
+
+const CATEGORY_COLORS = {
+  Production: { color: "#e05555", bg: "rgba(224,85,85,0.1)",   border: "rgba(224,85,85,0.3)" },
+  Staging:    { color: "#d97b3a", bg: "rgba(217,123,58,0.1)",  border: "rgba(217,123,58,0.3)" },
+  Development:{ color: "#7b8cde", bg: "rgba(123,140,222,0.1)", border: "rgba(123,140,222,0.3)" },
+  Testing:    { color: "#c9a84c", bg: "rgba(201,168,76,0.1)",  border: "rgba(201,168,76,0.3)" },
+  Sandbox:    { color: "#4caf7d", bg: "rgba(76,175,125,0.1)",  border: "rgba(76,175,125,0.3)" },
+  General:    { color: "#8899aa", bg: "rgba(136,153,170,0.1)", border: "rgba(136,153,170,0.3)" },
+};
+
+function getCategoryStyle(cat) {
+  return CATEGORY_COLORS[cat] || CATEGORY_COLORS.General;
+}
+
+function CategoryBadge({ category }) {
+  const s = getCategoryStyle(category);
+  return (
+    <span style={{
+      padding: "2px 8px", borderRadius: 4, fontSize: 9, fontWeight: 700,
+      fontFamily: "var(--font-ui)", letterSpacing: "0.1em", textTransform: "uppercase",
+      background: s.bg, border: `1px solid ${s.border}`, color: s.color,
+    }}>{category || "General"}</span>
+  );
+}
+
+function CategoryPicker({ value, onChange }) {
+  return (
+    <div style={{ marginBottom: "14px" }}>
+      <label style={labelStyle}>CATEGORY</label>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+        {CATEGORIES.map(c => {
+          const s = getCategoryStyle(c);
+          const sel = value === c;
+          return (
+            <button key={c} onClick={() => onChange(c)} style={{
+              padding: "5px 12px", borderRadius: 5, cursor: "pointer", fontSize: 10,
+              fontFamily: "var(--font-ui)", fontWeight: 700, letterSpacing: "0.08em",
+              textTransform: "uppercase", transition: "all 0.15s",
+              border: `1px solid ${sel ? s.border : "var(--border)"}`,
+              background: sel ? s.bg : "transparent",
+              color: sel ? s.color : "var(--accent3)",
+            }}>{c}</button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function scoreColor(s) {
   if (s >= 80) return "#4caf7d";
   if (s >= 60) return "#c9a84c";
@@ -88,8 +138,9 @@ function ThreeDotMenu({ onEdit, onDelete }) {
 
 // ── Add Account Modal ─────────────────────────────────────────────────────────
 function AddAccountModal({ token, onClose, onAdded }) {
-  const [cloud, setCloud] = useState("aws");
-  const [name,  setName]  = useState("");
+  const [cloud,    setCloud]    = useState("aws");
+  const [name,     setName]     = useState("");
+  const [category, setCategory] = useState("General");
   const [interval,     setInterval]     = useState(24);
   const [intervalMode, setIntervalMode] = useState("preset");
   const [customHours,  setCustomHours]  = useState(1);
@@ -112,7 +163,7 @@ function AddAccountModal({ token, onClose, onAdded }) {
         ? (customUnit === "minutes" ? customHours / 60
          : customUnit === "days"    ? customHours * 24
          : customHours) : interval;
-    const base = { name, cloud, scan_interval_hours: eff };
+    const base = { name, cloud, category, scan_interval_hours: eff };
     if (cloud === "aws") return { ...base, access_key_id: keyId, secret_access_key: secret, region };
     return { ...base, subscription_id: subId, tenant_id: tenant, client_id: clientId, client_secret: clientSec };
   }
@@ -171,6 +222,8 @@ function AddAccountModal({ token, onClose, onAdded }) {
         </div>
 
         <Field label="ACCOUNT NAME *" placeholder='e.g. "Production AWS"' value={name} onChange={setName} />
+
+        <CategoryPicker value={category} onChange={setCategory} />
 
         <div style={{ marginBottom:"20px" }}>
           <label style={labelStyle}>CLOUD PROVIDER</label>
@@ -297,6 +350,7 @@ function AddAccountModal({ token, onClose, onAdded }) {
 // ── Edit Account Modal ────────────────────────────────────────────────────────
 function EditAccountModal({ account, token, onClose, onUpdated }) {
   const [name,     setName]     = useState(account.name);
+  const [category, setCategory] = useState(account.category || "General");
   const [interval, setInterval] = useState(account.scan_interval_hours ?? 24);
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState(null);
@@ -308,7 +362,7 @@ function EditAccountModal({ account, token, onClose, onUpdated }) {
       const res = await fetch(`${API}/accounts/${account.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ name, scan_interval_hours: interval }),
+        body: JSON.stringify({ name, category, scan_interval_hours: interval }),
       });
       const data = await res.json();
       if (res.ok) { onUpdated(data.account); onClose(); }
@@ -343,6 +397,8 @@ function EditAccountModal({ account, token, onClose, onUpdated }) {
         </div>
 
         <Field label="ACCOUNT NAME" placeholder="Production AWS" value={name} onChange={setName} />
+
+        <CategoryPicker value={category} onChange={setCategory} />
 
         <div style={{ marginBottom:"20px" }}>
           <label style={labelStyle}>AUTO-SCAN INTERVAL</label>
@@ -453,12 +509,13 @@ function AccountCard({ account, token, role, onDelete, onScanComplete, onUpdate 
       <div style={{ display:"flex", alignItems:"flex-start",
                     justifyContent:"space-between", marginBottom:"14px" }}>
         <div>
-          <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap" }}>
             <span style={{ background: account.cloud==="aws" ? "#ff9900" : "#0089d6",
               color:"#000", fontSize:"9px", fontWeight:700, padding:"2px 6px",
               borderRadius:"3px", fontFamily:"var(--font-ui)", letterSpacing:"0.08em" }}>
               {account.cloud.toUpperCase()}
             </span>
+            <CategoryBadge category={account.category || "General"} />
             <span style={{ color:"var(--accent)", fontSize:"15px",
               fontWeight:700, fontFamily:"var(--font-display)" }}>{account.name}</span>
           </div>
@@ -650,17 +707,46 @@ export default function AccountsPage({ token, role, onScanComplete }) {
         </div>
       )}
 
-      {!loading && accounts.length > 0 && (
-        <div style={{ display:"grid",
-          gridTemplateColumns:"repeat(auto-fill, minmax(340px, 1fr))", gap:"16px" }}>
-          {accounts.map(account => (
-            <AccountCard key={account.id} account={account} token={token} role={role}
-              onDelete={id => setAccounts(prev => prev.filter(a => a.id !== id))}
-              onUpdate={u  => setAccounts(prev => prev.map(a => a.id===u.id ? {...a,...u} : a))}
-              onScanComplete={onScanComplete} />
-          ))}
-        </div>
-      )}
+      {!loading && accounts.length > 0 && (() => {
+        // Group by category, preserve CATEGORIES order, unknown categories at end
+        const grouped = {};
+        accounts.forEach(a => {
+          const cat = a.category || "General";
+          if (!grouped[cat]) grouped[cat] = [];
+          grouped[cat].push(a);
+        });
+        const orderedCats = [
+          ...CATEGORIES.filter(c => grouped[c]),
+          ...Object.keys(grouped).filter(c => !CATEGORIES.includes(c)),
+        ];
+        return orderedCats.map(cat => {
+          const s = getCategoryStyle(cat);
+          return (
+            <div key={cat} style={{ marginBottom: 32 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: s.color }} />
+                <span style={{
+                  fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 700,
+                  color: s.color, letterSpacing: "0.12em", textTransform: "uppercase",
+                }}>{cat}</span>
+                <span style={{
+                  fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--accent3)",
+                }}>{grouped[cat].length} account{grouped[cat].length !== 1 ? "s" : ""}</span>
+                <div style={{ flex: 1, height: 1, background: s.border }} />
+              </div>
+              <div style={{ display:"grid",
+                gridTemplateColumns:"repeat(auto-fill, minmax(340px, 1fr))", gap:"16px" }}>
+                {grouped[cat].map(account => (
+                  <AccountCard key={account.id} account={account} token={token} role={role}
+                    onDelete={id => setAccounts(prev => prev.filter(a => a.id !== id))}
+                    onUpdate={u  => setAccounts(prev => prev.map(a => a.id===u.id ? {...a,...u} : a))}
+                    onScanComplete={onScanComplete} />
+                ))}
+              </div>
+            </div>
+          );
+        });
+      })()}
     </div>
   );
 }
