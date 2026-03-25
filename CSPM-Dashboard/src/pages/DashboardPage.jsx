@@ -1,55 +1,68 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
   Tooltip, ResponsiveContainer, CartesianGrid, LabelList,
+  LineChart, Line,
 } from "recharts";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 const SEV_COLOR = {
-  CRITICAL: "#ff2255", HIGH: "#ff6b00",
-  MEDIUM:   "#ffe600", LOW:  "#39ff14",
+  CRITICAL: "#ff2255",
+  HIGH:     "#ff6b00",
+  MEDIUM:   "#ffe600",
+  LOW:      "#39ff14",
 };
+
+// Rule IDs format: AWS-S3-003, AWS-IAM-001, AZURE-STORAGE-001
+function serviceLabel(ruleId = "") {
+  const parts = ruleId.split("-");
+  if (parts.length >= 2) {
+    const svc = parts[1].toUpperCase();
+    const aliases = {
+      CFG: "Config", CT: "CloudTrail", GD: "GuardDuty",
+      ELB: "Load Balancer", ALB: "Load Balancer", WAF: "WAF",
+      SSM: "SSM", ECR: "ECR", ECS: "ECS",
+    };
+    return aliases[svc] || svc;
+  }
+  return ruleId || "OTHER";
+}
 
 function scoreColor(s) {
   if (s == null) return "var(--accent3)";
-  if (s >= 70)   return "#39ff14";
-  if (s >= 50)   return "#ffe600";
-  if (s >= 30)   return "#ff6b00";
+  if (s >= 80) return "#39ff14";
+  if (s >= 60) return "#ffe600";
+  if (s >= 40) return "#ff6b00";
   return "#ff2255";
 }
 function scoreLabel(s) {
   if (s == null) return "NO DATA";
-  if (s >= 70)   return "LOW RISK";
-  if (s >= 50)   return "MED RISK";
-  if (s >= 30)   return "HIGH RISK";
+  if (s >= 80) return "LOW RISK";
+  if (s >= 60) return "MED RISK";
+  if (s >= 40) return "HIGH RISK";
   return "CRITICAL";
 }
-
-function serviceLabel(ruleId = "") {
-  const r = ruleId.toLowerCase();
-  if (r.includes("_iam_"))        return "IAM";
-  if (r.includes("_s3_"))         return "S3";
-  if (r.includes("_ec2_"))        return "EC2";
-  if (r.includes("_rds_"))        return "RDS";
-  if (r.includes("_cloudtrail"))  return "CloudTrail";
-  if (r.includes("_guardduty"))   return "GuardDuty";
-  if (r.includes("_kms_"))        return "KMS";
-  if (r.includes("_lambda"))      return "Lambda";
-  if (r.includes("_vpc_"))        return "VPC";
-  if (r.includes("_elb_") || r.includes("_alb_")) return "Load Balancer";
-  if (r.startsWith("azure_")) {
-    const parts = r.split("_");
-    return (parts[1] || "azure").toUpperCase();
-  }
-  const parts = r.split("_");
-  return (parts[1] || parts[0] || "OTHER").toUpperCase();
+function timeAgo(iso) {
+  if (!iso) return "Never";
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "Just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+function statusColor(s) {
+  if (s === "resolved")     return "#39ff14";
+  if (s === "acknowledged") return "#ffe600";
+  return "#ff6b00";
 }
 
-// ── Shared card wrapper ────────────────────────────────────────────────────────
+// ── Shared card ───────────────────────────────────────────────────────────────
 function Card({ children, style = {} }) {
   return (
-    <div style={{
+    <div className="neon-card" style={{
       background: "var(--card)", border: "1px solid var(--border)",
       borderRadius: "10px", overflow: "hidden", ...style,
     }}>
@@ -61,47 +74,49 @@ function Card({ children, style = {} }) {
 function CardHeader({ title, right }) {
   return (
     <div style={{
-      padding: "14px 20px", borderBottom: "1px solid var(--border)",
-      display: "flex", justifyContent: "space-between", alignItems: "center",
+      padding: "12px 18px", borderBottom: "1px solid var(--border)",
+      display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
     }}>
-      <span style={{ color: "var(--accent)", fontFamily: "var(--font-display)",
-                     fontSize: "13px", fontWeight: 700, letterSpacing: "0.07em" }}>
-        {title}
-      </span>
-      {right && <span style={{ color: "var(--accent3)", fontSize: "11px",
-                               fontFamily: "var(--font-mono)" }}>{right}</span>}
+      <span style={{
+        color: "var(--accent)", fontFamily: "var(--font-display)",
+        fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em",
+      }}>{title}</span>
+      {right}
     </div>
   );
 }
 
-// ── Stat Card ─────────────────────────────────────────────────────────────────
-function StatCard({ label, value, color, sub, bar }) {
-  const pct = bar != null ? Math.min(100, Math.max(0, bar)) : null;
+// ── Stat card ─────────────────────────────────────────────────────────────────
+function StatCard({ label, value, color, sub, bar, active, onClick }) {
+  const hex = color?.startsWith("#") ? color : null;
   return (
-    <div style={{
-      background: "var(--card)", border: "1px solid var(--border)",
-      borderRadius: "10px", padding: "18px 20px",
+    <div onClick={onClick} style={{
+      background: active && hex ? `${hex}14` : "var(--card)",
+      border: `1px solid ${active && hex ? hex : "var(--border)"}`,
+      borderRadius: "10px", padding: "16px 18px",
+      cursor: onClick ? "pointer" : "default",
+      transition: "all 0.15s",
+      boxShadow: active && hex ? `0 0 20px ${hex}22` : "none",
     }}>
       <div style={{
-        fontFamily: "var(--font-display)", fontSize: "34px",
+        fontFamily: "var(--font-display)", fontSize: "32px",
         fontWeight: 800, color: color || "var(--accent)", lineHeight: 1,
       }}>{value ?? "—"}</div>
-      <div style={{ color: "var(--accent3)", fontSize: "10px",
-                    letterSpacing: "0.1em", marginTop: "6px",
-                    fontFamily: "var(--font-ui)", fontWeight: 600 }}>{label}</div>
-      {sub && (
-        <div style={{ color: color || "var(--accent3)", fontSize: "10px",
-                      fontFamily: "var(--font-ui)", marginTop: "2px",
-                      letterSpacing: "0.06em" }}>{sub}</div>
-      )}
-      {pct != null && (
-        <div style={{ marginTop: "10px", height: "3px",
-                      background: "var(--border)", borderRadius: "2px" }}>
+      <div style={{
+        color: "var(--accent3)", fontSize: "10px", letterSpacing: "0.1em",
+        marginTop: "6px", fontFamily: "var(--font-ui)", fontWeight: 700,
+      }}>{label}</div>
+      {sub && <div style={{
+        color: "var(--accent2)", fontSize: "10px",
+        fontFamily: "var(--font-mono)", marginTop: "3px",
+      }}>{sub}</div>}
+      {bar != null && (
+        <div style={{ marginTop: "10px", height: "3px", background: "var(--border)", borderRadius: "2px" }}>
           <div style={{
             height: "100%", borderRadius: "2px",
-            width: `${pct}%`,
+            width: `${Math.min(100, Math.max(0, bar))}%`,
             background: color || "var(--cyan)",
-            boxShadow: `0 0 6px ${color || "var(--cyan)"}`,
+            boxShadow: hex ? `0 0 6px ${hex}` : "none",
             transition: "width 0.8s ease",
           }} />
         </div>
@@ -110,237 +125,317 @@ function StatCard({ label, value, color, sub, bar }) {
   );
 }
 
-// ── Custom donut center label ─────────────────────────────────────────────────
-function DonutCenter({ cx, cy, score }) {
+// ── Badges ────────────────────────────────────────────────────────────────────
+function SevBadge({ sev }) {
+  const color = SEV_COLOR[sev] || "var(--accent3)";
   return (
-    <g>
-      <text x={cx} y={cy - 8} textAnchor="middle" dominantBaseline="middle"
-            fill={scoreColor(score)} fontSize={28} fontWeight={800}
-            fontFamily="var(--font-display)">
-        {score ?? "—"}
-      </text>
-      <text x={cx} y={cy + 16} textAnchor="middle" dominantBaseline="middle"
-            fill="#4a4535" fontSize={10} fontWeight={600}
-            fontFamily="var(--font-ui)" letterSpacing="2">
-        {scoreLabel(score)}
-      </text>
-    </g>
+    <span style={{
+      display: "inline-block", background: `${color}18`,
+      border: `1px solid ${color}40`, color,
+      fontSize: "9px", fontWeight: 800, padding: "2px 7px",
+      borderRadius: "3px", fontFamily: "var(--font-ui)",
+      letterSpacing: "0.08em", whiteSpace: "nowrap",
+    }}>{sev}</span>
   );
 }
 
-// ── Custom tooltip shared style ───────────────────────────────────────────────
-const tooltipStyle = {
-  contentStyle: {
-    background: "#0c0d10", border: "1px solid rgba(255,230,0,0.2)",
-    borderRadius: "6px", fontSize: "12px",
-  },
-  labelStyle:   { color: "#f0e8c0", fontFamily: "var(--font-ui)", marginBottom: 4 },
-  itemStyle:    { fontFamily: "var(--font-mono)", fontSize: "11px" },
-  cursor:       { fill: "rgba(255,230,0,0.04)" },
-};
-
-// ── Account Health Row ────────────────────────────────────────────────────────
-function AccountRow({ account, onScanClick, canScan }) {
-  const score = account.latest_score;
-  const fc    = account.finding_counts || {};
-  const total = (fc.critical||0) + (fc.high||0) + (fc.medium||0) + (fc.low||0);
-
+function SvcBadge({ svc }) {
   return (
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: "28px 1fr 120px 60px 60px 60px 60px 110px",
-      gap: "12px", alignItems: "center",
-      padding: "12px 20px", borderBottom: "1px solid var(--border)",
-      transition: "background 0.15s",
-    }}
-    onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
-    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+    <span style={{
+      display: "inline-block",
+      background: "rgba(0,207,255,0.08)", border: "1px solid rgba(0,207,255,0.2)",
+      color: "var(--blue)", fontSize: "9px", fontWeight: 700,
+      padding: "2px 6px", borderRadius: "3px",
+      fontFamily: "var(--font-ui)", letterSpacing: "0.06em", whiteSpace: "nowrap",
+    }}>{svc}</span>
+  );
+}
 
-      <div style={{ width: "10px", height: "10px", borderRadius: "50%", flexShrink: 0,
-                    background: account.cloud === "aws" ? "#ff9900" : "#0089d6",
-                    boxShadow: account.cloud === "aws"
-                      ? "0 0 6px rgba(255,153,0,0.5)" : "0 0 6px rgba(0,137,214,0.5)" }} />
+function StatusBadge({ status }) {
+  return (
+    <span style={{
+      color: statusColor(status || "open"), fontSize: "9px",
+      fontWeight: 700, fontFamily: "var(--font-ui)", letterSpacing: "0.06em",
+    }}>{(status || "OPEN").toUpperCase()}</span>
+  );
+}
 
-      <div>
-        <div style={{ color: "var(--accent)", fontSize: "13px",
-                      fontWeight: 600, fontFamily: "var(--font-ui)" }}>{account.name}</div>
-        <div style={{ color: "var(--accent3)", fontSize: "11px",
-                      fontFamily: "var(--font-mono)", marginTop: "2px" }}>
-          {account.cloud.toUpperCase()}{account.region ? ` · ${account.region}` : ""}
-        </div>
+// ── Finding row (expandable) ──────────────────────────────────────────────────
+function FindingRow({ f, isExpanded, onToggle, onStatusChange, currentStatus }) {
+  const svc = f.service || serviceLabel(f.rule_id || "");
+  return (
+    <div>
+      <div onClick={onToggle} style={{
+        display: "grid",
+        gridTemplateColumns: "88px 130px 58px 1fr 100px 88px 20px",
+        gap: "10px", alignItems: "center",
+        padding: "9px 16px", cursor: "pointer",
+        borderBottom: isExpanded ? "none" : "1px solid var(--border)",
+        background: isExpanded ? "rgba(255,230,0,0.025)" : "transparent",
+        transition: "background 0.15s",
+      }}
+      onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}
+      onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = "transparent"; }}>
+        <SevBadge sev={f.severity} />
+        <div style={{
+          fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--cyan)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>{f.rule_id}</div>
+        <SvcBadge svc={svc} />
+        <div style={{
+          color: "var(--accent)", fontSize: "11px", fontFamily: "var(--font-ui)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>{f.resource_name || f.resource_id || "—"}</div>
+        <div style={{
+          color: "var(--accent3)", fontSize: "10px", fontFamily: "var(--font-mono)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>{f.account_name || "—"}</div>
+        <StatusBadge status={currentStatus} />
+        <span style={{
+          color: "var(--accent3)", fontSize: "14px",
+          transition: "transform 0.2s",
+          transform: isExpanded ? "rotate(90deg)" : "none",
+          display: "inline-block",
+        }}>›</span>
       </div>
 
-      {/* Score with mini bar */}
-      <div>
-        {score != null ? (
-          <>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-              <span style={{ color: scoreColor(score), fontSize: "18px",
-                             fontWeight: 800, fontFamily: "var(--font-display)",
-                             lineHeight: 1 }}>{score}</span>
-              <span style={{ color: scoreColor(score), fontSize: "9px",
-                             letterSpacing: "0.06em", fontFamily: "var(--font-ui)" }}>
-                {scoreLabel(score)}
-              </span>
-            </div>
-            <div style={{ marginTop: 5, height: "3px",
-                          background: "var(--border)", borderRadius: "2px" }}>
-              <div style={{ height: "100%", borderRadius: "2px",
-                            width: `${score}%`, background: scoreColor(score),
-                            boxShadow: `0 0 5px ${scoreColor(score)}` }} />
-            </div>
-          </>
-        ) : (
-          <div style={{ color: "var(--accent3)", fontSize: "11px",
-                        fontFamily: "var(--font-mono)" }}>NO DATA</div>
-        )}
-      </div>
+      {isExpanded && (
+        <div style={{
+          padding: "14px 18px 16px",
+          borderBottom: "1px solid var(--border)",
+          borderLeft: `3px solid ${SEV_COLOR[f.severity] || "var(--border)"}`,
+          background: "rgba(255,230,0,0.015)",
+        }}>
+          <div style={{
+            color: "var(--accent)", fontSize: "12px",
+            fontFamily: "var(--font-ui)", lineHeight: 1.6, marginBottom: "12px",
+          }}>{f.message}</div>
 
-      {/* Finding severity counts */}
-      {["critical","high","medium","low"].map(sev => (
-        <div key={sev} style={{ textAlign: "center" }}>
-          <span style={{
-            color: fc[sev] > 0 ? SEV_COLOR[sev.toUpperCase()] : "var(--accent3)",
-            fontSize: "14px", fontWeight: fc[sev] > 0 ? 700 : 400,
-            fontFamily: "var(--font-display)",
-          }}>{fc[sev] ?? 0}</span>
+          {f.remediation && (
+            <div style={{ marginBottom: "12px" }}>
+              <div style={{
+                color: "var(--accent3)", fontSize: "9px", fontFamily: "var(--font-ui)",
+                fontWeight: 700, letterSpacing: "0.12em", marginBottom: "5px",
+              }}>REMEDIATION</div>
+              <div style={{
+                color: "var(--accent2)", fontSize: "11px",
+                fontFamily: "var(--font-mono)", lineHeight: 1.55,
+              }}>{f.remediation}</div>
+            </div>
+          )}
+
+          {f.frameworks?.length > 0 && (
+            <div style={{ display: "flex", gap: "5px", flexWrap: "wrap", marginBottom: "12px" }}>
+              {f.frameworks.map(fw => (
+                <span key={fw} style={{
+                  background: "rgba(191,95,255,0.08)", border: "1px solid rgba(191,95,255,0.25)",
+                  color: "var(--purple)", fontSize: "9px", fontWeight: 700,
+                  padding: "2px 7px", borderRadius: "3px", fontFamily: "var(--font-mono)",
+                }}>{fw}</span>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+            <span style={{
+              color: "var(--accent3)", fontSize: "9px", fontFamily: "var(--font-ui)",
+              fontWeight: 700, letterSpacing: "0.1em",
+            }}>STATUS:</span>
+            {["open", "acknowledged", "resolved"].map(s => (
+              <button key={s}
+                onClick={e => { e.stopPropagation(); onStatusChange(s); }}
+                style={{
+                  padding: "3px 10px", borderRadius: "4px", cursor: "pointer",
+                  fontFamily: "var(--font-ui)", fontSize: "10px", fontWeight: 700,
+                  letterSpacing: "0.06em",
+                  background: currentStatus === s ? `${statusColor(s)}18` : "transparent",
+                  border: `1px solid ${currentStatus === s ? statusColor(s) : "var(--border)"}`,
+                  color: currentStatus === s ? statusColor(s) : "var(--accent3)",
+                  transition: "all 0.15s",
+                }}>{s.toUpperCase()}</button>
+            ))}
+            {f.resource_id && (
+              <span style={{
+                marginLeft: "auto", color: "var(--accent3)", fontSize: "9px",
+                fontFamily: "var(--font-mono)",
+              }}>ID: {f.resource_id}</span>
+            )}
+          </div>
         </div>
-      ))}
-
-      {canScan ? (
-        <button onClick={() => onScanClick(account)} className="neon-btn" style={{
-          padding: "6px 12px", border: "1px solid rgba(255,230,0,0.3)",
-          borderRadius: "5px", background: "transparent",
-          color: "var(--cyan)", fontFamily: "var(--font-ui)",
-          fontSize: "11px", fontWeight: 600, cursor: "pointer",
-          letterSpacing: "0.06em",
-        }}>SCAN NOW</button>
-      ) : (
-        <div style={{ fontSize: "10px", color: "var(--accent3)",
-                      fontFamily: "var(--font-ui)", letterSpacing: "0.06em",
-                      textAlign: "center" }}>READ ONLY</div>
       )}
     </div>
   );
 }
 
-// ── Empty slot ────────────────────────────────────────────────────────────────
-function EmptySlot({ icon, text, sub, height = 140 }) {
+// ── Custom chart tooltip ───────────────────────────────────────────────────────
+function ChartTip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center",
-                  justifyContent: "center", gap: "8px",
-                  height, color: "var(--accent3)" }}>
-      {icon && <div style={{ fontSize: "24px", opacity: 0.35 }}>{icon}</div>}
-      <div style={{ fontFamily: "var(--font-ui)", fontSize: "12px",
-                    letterSpacing: "0.06em" }}>{text}</div>
-      {sub && <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px",
-                            opacity: 0.5, textAlign: "center", padding: "0 20px" }}>{sub}</div>}
+    <div style={{
+      background: "var(--card)", border: "1px solid var(--border)",
+      borderRadius: "6px", padding: "8px 12px",
+      fontFamily: "var(--font-mono)", fontSize: "11px",
+    }}>
+      {label && <div style={{ color: "var(--accent2)", marginBottom: 4, fontSize: "10px" }}>{label}</div>}
+      {payload.map((p, i) => (
+        <div key={i} style={{ color: p.color || "var(--cyan)", fontWeight: 700 }}>
+          {p.name !== "score" && p.name !== "count" ? `${p.name}: ` : ""}{p.value}
+        </div>
+      ))}
     </div>
   );
 }
 
-// ── Main Dashboard ────────────────────────────────────────────────────────────
+// ── Category Metrics (shown when >1 category) ─────────────────────────────────
+const CATEGORY_COLORS = {
+  Production:  "#ff2255", Development: "#00cfff", Staging: "#bf5fff",
+  Testing:     "#ffe600", Sandbox:     "#39ff14", General: "#8a8070",
+};
+
+function CategoryMetrics({ accounts }) {
+  const grouped = {};
+  accounts.forEach(a => {
+    const cat = a.category || "General";
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(a);
+  });
+  const cats = Object.keys(grouped);
+  if (cats.length <= 1) return null;
+
+  return (
+    <Card style={{ marginBottom: "14px" }}>
+      <CardHeader title="CATEGORY METRICS"
+        right={<span style={{ color: "var(--accent3)", fontSize: "11px", fontFamily: "var(--font-mono)" }}>{cats.length} categories</span>} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px,1fr))", gap: "0" }}>
+        {cats.map(cat => {
+          const accs = grouped[cat];
+          const scores = accs.map(a => a.latest_score).filter(s => s != null);
+          const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+          const fc = accs.reduce((t, a) => {
+            const c = a.finding_counts || {};
+            return { critical: t.critical + (c.critical||0), high: t.high + (c.high||0),
+                     medium: t.medium + (c.medium||0), low: t.low + (c.low||0) };
+          }, { critical:0, high:0, medium:0, low:0 });
+          const color = CATEGORY_COLORS[cat] || "var(--accent3)";
+          return (
+            <div key={cat} style={{
+              padding: "14px 16px", borderRight: "1px solid var(--border)",
+              borderBottom: "1px solid var(--border)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: color,
+                              boxShadow: `0 0 4px ${color}` }} />
+                <span style={{ color: "var(--accent)", fontSize: "11px",
+                               fontWeight: 700, fontFamily: "var(--font-ui)" }}>{cat}</span>
+                <span style={{ color: "var(--accent3)", fontSize: "10px",
+                               fontFamily: "var(--font-mono)", marginLeft: "auto" }}>
+                  {accs.length} acct{accs.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 8 }}>
+                <span style={{ color: scoreColor(avg), fontSize: "22px",
+                               fontWeight: 800, fontFamily: "var(--font-display)" }}>
+                  {avg ?? "—"}
+                </span>
+                <span style={{ color: scoreColor(avg), fontSize: "9px",
+                               fontFamily: "var(--font-ui)", fontWeight: 700 }}>
+                  {scoreLabel(avg)}
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {[["C", fc.critical, SEV_COLOR.CRITICAL], ["H", fc.high, SEV_COLOR.HIGH],
+                  ["M", fc.medium, SEV_COLOR.MEDIUM], ["L", fc.low, SEV_COLOR.LOW]].map(([k, v, c]) => (
+                  <div key={k} style={{ textAlign: "center" }}>
+                    <div style={{ color: v > 0 ? c : "var(--accent3)", fontSize: "14px",
+                                  fontWeight: 700, fontFamily: "var(--font-display)" }}>{v}</div>
+                    <div style={{ color: "var(--accent3)", fontSize: "8px",
+                                  fontFamily: "var(--font-ui)", letterSpacing: "0.08em" }}>{k}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+// ── Main Dashboard ─────────────────────────────────────────────────────────────
 export default function DashboardPage({ token, role, onScanComplete, onNavigate, isActive }) {
   const canScan = role !== "viewer";
-  const [data,      setData]      = useState(null);
-  const [fetching,  setFetching]  = useState(true);
-  const [fetchErr,  setFetchErr]  = useState(null);
-  const [scanning,  setScanning]  = useState(null);
-  const [scanErr,   setScanErr]   = useState(null);
+  const [data,         setData]         = useState(null);
+  const [fetching,     setFetching]     = useState(true);
+  const [fetchErr,     setFetchErr]     = useState(null);
+  const [scanning,     setScanning]     = useState(null);
+  const [scanErr,      setScanErr]      = useState(null);
+  const [timeRange,    setTimeRange]    = useState("all");
   const [sevFilter,    setSevFilter]    = useState("ALL");
-  const [findingSearch, setFindingSearch] = useState("");
-  const [statusFilter,  setStatusFilter]  = useState("ALL");
-  const lastFetchRef = useRef(0);
-  const [statuses,      setStatuses]     = useState({});
-  const [expanded,      setExpanded]     = useState(null);
-  const [statusMsg,     setStatusMsg]    = useState(null);
-  const [timeRange,     setTimeRange]    = useState("all");
-  const [bulkScanning,  setBulkScanning] = useState(false);
-  const [bulkToast,     setBulkToast]    = useState(null);
+  const [search,       setSearch]       = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [statuses,     setStatuses]     = useState({});
+  const [expanded,     setExpanded]     = useState(null);
+  const [bulkScanning, setBulkScanning] = useState(false);
+  const [toast,        setToast]        = useState(null);
+  const lastFetch = useRef(0);
+
+  const showToast = (msg, err = false) => {
+    setToast({ msg, err });
+    setTimeout(() => setToast(null), 5000);
+  };
 
   const fetchDashboard = useCallback(async (range) => {
-    lastFetchRef.current = Date.now();
-    setFetching(true);
-    setFetchErr(null);
-    const days = range === "all" ? null : range;
-    const url  = days ? `${API}/dashboard?days=${days}` : `${API}/dashboard`;
+    lastFetch.current = Date.now();
+    setFetching(true); setFetchErr(null);
+    const url = range !== "all" ? `${API}/dashboard?days=${range}` : `${API}/dashboard`;
     try {
-      const res = await fetch(url, {
-        headers: { "Authorization": `Bearer ${token}` },
-      });
-      if (res.ok) {
-        setData(await res.json());
-      } else {
-        const d = await res.json().catch(() => ({}));
-        setFetchErr(d.detail || "Failed to load dashboard data. Please refresh.");
-      }
-    } catch {
-      setFetchErr("Cannot reach the backend server. Please check your connection.");
-    }
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setData(await res.json());
+      else { const e = await res.json().catch(() => ({})); setFetchErr(e.detail || "Failed to load."); }
+    } catch { setFetchErr("Cannot reach backend."); }
     finally { setFetching(false); }
   }, [token]);
 
-  // Initial fetch
-  useEffect(() => { fetchDashboard(timeRange); }, [fetchDashboard]);
+  useEffect(() => { fetchDashboard(timeRange); }, [fetchDashboard, timeRange]);
 
-  // Re-fetch when time range changes
-  useEffect(() => { fetchDashboard(timeRange); }, [timeRange]);
-
-  // Re-fetch whenever the dashboard tab becomes visible (user navigates back to it)
-  // Throttled: only re-fetch if it's been more than 30 seconds since last fetch
   useEffect(() => {
     if (!isActive) return;
-    const now = Date.now();
-    if (now - lastFetchRef.current > 30_000) {
-      lastFetchRef.current = now;
-      fetchDashboard(timeRange);
-    }
-  }, [isActive, fetchDashboard]);
+    if (Date.now() - lastFetch.current > 30000) fetchDashboard(timeRange);
+  }, [isActive]);
 
-  async function handleScanAccount(account) {
-    setScanning(account.id);
-    setScanErr(null);
+  async function handleScan(account) {
+    setScanning(account.id); setScanErr(null);
     try {
       const res = await fetch(`${API}/accounts/${account.id}/scan`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${token}` },
+        method: "POST", headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
         const result = await res.json();
         await fetchDashboard(timeRange);
         onScanComplete(result);
+        showToast(`✓ ${account.name} scanned successfully`);
       } else {
-        const d = await res.json().catch(() => ({}));
-        setScanErr(d.detail || "Scan failed. Please try again.");
+        const e = await res.json().catch(() => ({}));
+        setScanErr(e.detail || "Scan failed.");
       }
-    } catch {
-      setScanErr("Cannot reach the backend server. Please check your connection.");
-    }
+    } catch { setScanErr("Cannot reach backend."); }
     finally { setScanning(null); }
   }
 
   async function handleBulkScan() {
     setBulkScanning(true);
-    setBulkToast(null);
     try {
       const res = await fetch(`${API}/accounts/scan-all`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${token}` },
+        method: "POST", headers: { Authorization: `Bearer ${token}` },
       });
       const d = await res.json();
       if (res.ok) {
         await fetchDashboard(timeRange);
-        setBulkToast(`${d.success_count}/${d.results.length} accounts scanned successfully`
-          + (d.fail_count > 0 ? ` · ${d.fail_count} failed` : ""));
-      } else {
-        setBulkToast(d.detail || "Bulk scan failed.");
-      }
-    } catch {
-      setBulkToast("Cannot reach the backend server.");
-    } finally {
-      setBulkScanning(false);
-      setTimeout(() => setBulkToast(null), 6000);
-    }
+        showToast(`✓ ${d.success_count}/${d.results?.length} accounts scanned` +
+          (d.fail_count > 0 ? ` · ${d.fail_count} failed` : ""));
+      } else showToast(d.detail || "Bulk scan failed.", true);
+    } catch { showToast("Cannot reach backend.", true); }
+    finally { setBulkScanning(false); }
   }
 
   async function handleStatus(f, status) {
@@ -348,144 +443,127 @@ export default function DashboardPage({ token, role, onScanComplete, onNavigate,
     try {
       const res = await fetch(`${API}/finding-status`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ finding_key: key, status }),
       });
-      if (res.ok) {
-        setStatuses(p => ({ ...p, [key]: status }));
-      } else {
-        setStatusMsg("Failed to update finding status. Please try again.");
-        setTimeout(() => setStatusMsg(null), 4000);
-      }
-    } catch {
-      setStatusMsg("Cannot reach the backend server.");
-      setTimeout(() => setStatusMsg(null), 4000);
-    }
+      if (res.ok) setStatuses(p => ({ ...p, [key]: status }));
+    } catch {}
   }
 
   function getStatus(f) {
     return statuses[`${f.rule_id}::${f.resource_id}`] || f.status || "open";
   }
 
-  // ── Derived data ────────────────────────────────────────────────────────────
-  const d = data || {};
-  const accounts       = d.accounts        || [];
-  const recentFindings = d.recent_findings  || [];
-  const overallScore   = d.overall_score   ?? null;
-  const totalAccounts  = d.total_accounts  ?? 0;
+  // ── Derived data ─────────────────────────────────────────────────────────────
+  const d              = data || {};
+  const accounts       = d.accounts       || [];
+  const recentFindings = d.recent_findings || [];
+  const overallScore   = d.overall_score  ?? null;
+  const totalAccounts  = d.total_accounts ?? 0;
   const scannedAccounts = d.scanned_accounts ?? 0;
-  const totalFindings  = d.total_findings  ?? 0;
-  const totalCritical  = d.total_critical  ?? 0;
-  const totalHigh      = d.total_high      ?? 0;
+  const trend          = d.trend          || [];
+  const trendAccounts  = d.trend_accounts || [];
 
-  // Compute medium/low from account finding_counts
-  const totalMedium = accounts.reduce((s, a) => s + (a.finding_counts?.medium || 0), 0);
-  const totalLow    = accounts.reduce((s, a) => s + (a.finding_counts?.low    || 0), 0);
+  // Compute all 4 severity totals consistently from account finding_counts
+  const totalCritical = d.total_critical ?? 0;
+  const totalHigh     = d.total_high     ?? 0;
+  const totalMedium   = accounts.reduce((s, a) => s + (a.finding_counts?.medium || 0), 0);
+  const totalLow      = accounts.reduce((s, a) => s + (a.finding_counts?.low    || 0), 0);
+  const totalFindings = totalCritical + totalHigh + totalMedium + totalLow;
 
-  // Severity donut data
   const sevData = [
     { name: "CRITICAL", value: totalCritical, color: SEV_COLOR.CRITICAL },
-    { name: "HIGH",     value: totalHigh,     color: SEV_COLOR.HIGH     },
-    { name: "MEDIUM",   value: totalMedium,   color: SEV_COLOR.MEDIUM   },
-    { name: "LOW",      value: totalLow,      color: SEV_COLOR.LOW      },
+    { name: "HIGH",     value: totalHigh,     color: SEV_COLOR.HIGH },
+    { name: "MEDIUM",   value: totalMedium,   color: SEV_COLOR.MEDIUM },
+    { name: "LOW",      value: totalLow,      color: SEV_COLOR.LOW },
   ].filter(x => x.value > 0);
 
-  // Account scores bar data
   const scoreBarData = accounts
     .filter(a => a.latest_score != null)
-    .map(a => ({ name: a.name.length > 14 ? a.name.slice(0, 13) + "…" : a.name,
-                 score: a.latest_score, fill: scoreColor(a.latest_score) }));
+    .map(a => ({
+      name: a.name.length > 14 ? a.name.slice(0, 13) + "…" : a.name,
+      score: a.latest_score,
+      fill: scoreColor(a.latest_score),
+    }));
 
-  // Top affected services
+  // Top services — fixed: parse AWS-S3-003 format, use f.service if present
   const svcMap = {};
   recentFindings.forEach(f => {
-    const svc = serviceLabel(f.rule_id);
+    const svc = f.service || serviceLabel(f.rule_id || "");
     svcMap[svc] = (svcMap[svc] || 0) + 1;
   });
   const topServices = Object.entries(svcMap)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
+    .slice(0, 10)
     .map(([name, count]) => ({ name, count }));
 
-  // Filtered findings
-  const filteredFindings = recentFindings.filter(f => {
+  const filteredFindings = useMemo(() => recentFindings.filter(f => {
     if (sevFilter !== "ALL" && f.severity !== sevFilter) return false;
     if (statusFilter !== "ALL") {
-      const fStatus = statuses[`${f.rule_id}::${f.resource_id}`] || f.status || "open";
-      if (fStatus !== statusFilter) return false;
+      const st = statuses[`${f.rule_id}::${f.resource_id}`] || f.status || "open";
+      if (st !== statusFilter) return false;
     }
-    if (findingSearch) {
-      const q = findingSearch.toLowerCase();
+    if (search) {
+      const q = search.toLowerCase();
       return (f.rule_id || "").toLowerCase().includes(q)
           || (f.resource_name || "").toLowerCase().includes(q)
           || (f.message || "").toLowerCase().includes(q)
           || (f.account_name || "").toLowerCase().includes(q);
     }
     return true;
-  });
+  }), [recentFindings, sevFilter, statusFilter, search, statuses]);
 
-  const SEV_FILTERS = ["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"];
+  const trendColors = ["#ffe600", "#00cfff", "#39ff14", "#bf5fff", "#ff6b00"];
 
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div style={{ padding: "28px 32px", maxWidth: "1300px", margin: "0 auto",
+    <div style={{ padding: "24px 28px", maxWidth: "1400px", margin: "0 auto",
                   animation: "fadeIn 0.3s ease" }}>
 
-      {/* ── Bulk scan toast ── */}
-      {bulkToast && (
+      {/* Toast */}
+      {toast && (
         <div style={{
-          position: "fixed", bottom: "64px", right: "24px", zIndex: 999,
+          position: "fixed", top: "20px", right: "20px", zIndex: 9999,
           padding: "12px 20px", borderRadius: "8px",
-          background: "rgba(255,230,0,0.08)", border: "1px solid rgba(255,230,0,0.25)",
-          color: "var(--cyan)", fontFamily: "var(--font-mono)", fontSize: "12px",
-          boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-        }}>
-          ✓ {bulkToast}
-        </div>
-      )}
-
-      {/* ── Status toast ── */}
-      {statusMsg && (
-        <div style={{
-          position: "fixed", bottom: "24px", right: "24px", zIndex: 999,
-          padding: "12px 20px", borderRadius: "8px",
-          background: "rgba(224,85,85,0.12)", border: "1px solid rgba(224,85,85,0.3)",
-          color: "#e05555", fontFamily: "var(--font-mono)", fontSize: "12px",
-          boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-        }}>
-          ⚠ {statusMsg}
-        </div>
+          background: toast.err ? "rgba(255,34,85,0.12)" : "rgba(57,255,20,0.08)",
+          border: `1px solid ${toast.err ? "rgba(255,34,85,0.3)" : "rgba(57,255,20,0.25)"}`,
+          color: toast.err ? "#ff2255" : "#39ff14",
+          fontFamily: "var(--font-mono)", fontSize: "12px",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+        }}>{toast.msg}</div>
       )}
 
       {/* ── Header ── */}
       <div style={{ display: "flex", justifyContent: "space-between",
-                    alignItems: "flex-start", marginBottom: "24px" }}>
+                    alignItems: "flex-start", marginBottom: "20px" }}>
         <div>
           <h1 style={{ fontFamily: "var(--font-display)", fontSize: "20px",
                        fontWeight: 700, color: "var(--accent)",
                        letterSpacing: "0.05em", margin: 0 }}>DASHBOARD</h1>
-          <p style={{ color: "var(--accent3)", fontSize: "12px", marginTop: "4px",
-                      fontFamily: "var(--font-mono)",
-                      display: "flex", alignItems: "center", gap: "8px" }}>
+          <div style={{ color: "var(--accent3)", fontSize: "12px", marginTop: "5px",
+                        fontFamily: "var(--font-mono)", display: "flex",
+                        alignItems: "center", gap: "6px" }}>
             {fetching
-              ? <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ width: "9px", height: "9px",
-                                 border: "1.5px solid var(--border)",
-                                 borderTop: "1.5px solid var(--cyan)",
-                                 borderRadius: "50%",
-                                 animation: "spin 0.7s linear infinite",
-                                 display: "inline-block" }} />
-                  LOADING...
-                </span>
-              : `${scannedAccounts}/${totalAccounts} accounts scanned · ${totalFindings} total findings`}
-          </p>
+              ? <><span style={{
+                  width: 8, height: 8, border: "1.5px solid var(--border)",
+                  borderTop: "1.5px solid var(--cyan)", borderRadius: "50%",
+                  animation: "spin 0.7s linear infinite", display: "inline-block",
+                }} /> LOADING...</>
+              : <>
+                  <span>{scannedAccounts}/{totalAccounts} accounts scanned</span>
+                  <span style={{ color: "var(--border)" }}>·</span>
+                  <span style={{ color: totalFindings > 0 ? SEV_COLOR.HIGH : "#39ff14",
+                                 fontWeight: 700 }}>
+                    {totalFindings} total findings
+                  </span>
+                </>}
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 4 }}>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           {[["all","ALL"],["7","7D"],["30","30D"],["90","90D"]].map(([v, l]) => (
             <button key={v} onClick={() => setTimeRange(v)} style={{
-              padding: "6px 10px", borderRadius: 5, fontSize: 10,
+              padding: "5px 10px", borderRadius: 5, fontSize: 10,
               fontFamily: "var(--font-ui)", fontWeight: 700, letterSpacing: "0.08em",
               cursor: "pointer", border: "1px solid var(--border)",
               background: timeRange === v ? "rgba(255,230,0,0.12)" : "transparent",
@@ -493,542 +571,508 @@ export default function DashboardPage({ token, role, onScanComplete, onNavigate,
               transition: "all 0.15s",
             }}>{l}</button>
           ))}
+          <button onClick={() => fetchDashboard(timeRange)} disabled={fetching} style={{
+            padding: "5px 10px", borderRadius: 5, fontSize: 10,
+            fontFamily: "var(--font-ui)", fontWeight: 700, cursor: "pointer",
+            border: "1px solid var(--border)", background: "transparent",
+            color: "var(--accent3)", opacity: fetching ? 0.5 : 1,
+          }}>↻</button>
+          {canScan && (
+            <button onClick={handleBulkScan} disabled={bulkScanning || fetching}
+              className="neon-btn" style={{
+                padding: "5px 14px", borderRadius: 5, fontSize: 10,
+                fontFamily: "var(--font-ui)", fontWeight: 700, letterSpacing: "0.06em",
+                cursor: bulkScanning ? "not-allowed" : "pointer",
+                border: "1px solid rgba(255,230,0,0.35)",
+                background: "rgba(255,230,0,0.08)", color: "var(--cyan)",
+                opacity: bulkScanning ? 0.6 : 1,
+              }}>{bulkScanning ? "SCANNING…" : "⚡ SCAN ALL"}</button>
+          )}
         </div>
       </div>
 
-      {/* ── Error banners ── */}
+      {/* Error banners */}
       {fetchErr && (
-        <div style={{
-          marginBottom: "16px", padding: "12px 16px",
-          background: "rgba(224,85,85,0.08)", border: "1px solid rgba(224,85,85,0.25)",
-          borderRadius: "8px", color: "#e05555",
-          fontFamily: "var(--font-mono)", fontSize: "12px",
-          display: "flex", alignItems: "center", gap: "10px",
-        }}>
-          <span style={{ fontSize: "16px" }}>⚠</span>
-          {fetchErr}
+        <div style={{ marginBottom: 14, padding: "10px 16px", borderRadius: 8,
+                      background: "rgba(255,34,85,0.08)", border: "1px solid rgba(255,34,85,0.25)",
+                      color: "#ff2255", fontFamily: "var(--font-mono)", fontSize: "12px" }}>
+          ⚠ {fetchErr}
         </div>
       )}
       {scanErr && (
-        <div style={{
-          marginBottom: "16px", padding: "12px 16px",
-          background: "rgba(224,85,85,0.08)", border: "1px solid rgba(224,85,85,0.25)",
-          borderRadius: "8px", color: "#e05555",
-          fontFamily: "var(--font-mono)", fontSize: "12px",
-          display: "flex", alignItems: "center", gap: "10px",
-        }}>
-          <span style={{ fontSize: "16px" }}>⚠</span>
-          {scanErr}
+        <div style={{ marginBottom: 14, padding: "10px 16px", borderRadius: 8,
+                      background: "rgba(255,34,85,0.08)", border: "1px solid rgba(255,34,85,0.25)",
+                      color: "#ff2255", fontFamily: "var(--font-mono)", fontSize: "12px",
+                      display: "flex", alignItems: "center", gap: 10 }}>
+          ⚠ {scanErr}
           <button onClick={() => setScanErr(null)} style={{
             marginLeft: "auto", background: "transparent", border: "none",
-            color: "#e05555", cursor: "pointer", fontSize: "14px",
+            color: "#ff2255", cursor: "pointer",
           }}>✕</button>
         </div>
       )}
 
-      {/* ── Stat Cards ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)",
-                    gap: "12px", marginBottom: "20px" }}>
+      {/* ── Stat Cards: 6 cards ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)",
+                    gap: "12px", marginBottom: "14px" }}>
         <StatCard label="SECURITY SCORE" value={overallScore}
                   color={scoreColor(overallScore)} sub={scoreLabel(overallScore)}
                   bar={overallScore} />
         <StatCard label="ACCOUNTS" value={totalAccounts}
-                  sub={`${scannedAccounts} scanned`} />
+                  color="var(--blue)" sub={`${scannedAccounts} scanned`} />
         <StatCard label="CRITICAL" value={totalCritical}
-                  color={totalCritical > 0 ? SEV_COLOR.CRITICAL : "#39ff14"} />
+                  color={totalCritical > 0 ? SEV_COLOR.CRITICAL : "var(--accent3)"}
+                  active={sevFilter === "CRITICAL"}
+                  onClick={() => setSevFilter(f => f === "CRITICAL" ? "ALL" : "CRITICAL")} />
         <StatCard label="HIGH" value={totalHigh}
-                  color={totalHigh > 0 ? SEV_COLOR.HIGH : "#39ff14"} />
-        <StatCard label="TOTAL FINDINGS" value={totalFindings}
-                  sub={`${totalMedium} med · ${totalLow} low`} />
+                  color={totalHigh > 0 ? SEV_COLOR.HIGH : "var(--accent3)"}
+                  active={sevFilter === "HIGH"}
+                  onClick={() => setSevFilter(f => f === "HIGH" ? "ALL" : "HIGH")} />
+        <StatCard label="MEDIUM" value={totalMedium}
+                  color={totalMedium > 0 ? SEV_COLOR.MEDIUM : "var(--accent3)"}
+                  active={sevFilter === "MEDIUM"}
+                  onClick={() => setSevFilter(f => f === "MEDIUM" ? "ALL" : "MEDIUM")} />
+        <StatCard label="LOW" value={totalLow}
+                  color={totalLow > 0 ? SEV_COLOR.LOW : "var(--accent3)"}
+                  active={sevFilter === "LOW"}
+                  onClick={() => setSevFilter(f => f === "LOW" ? "ALL" : "LOW")} />
       </div>
 
-      {/* ── Charts Row ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr",
-                    gap: "16px", marginBottom: "16px" }}>
+      {/* ── Category Metrics ── */}
+      <CategoryMetrics accounts={accounts} />
 
-        {/* Severity Donut */}
+      {/* ── Charts row ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr",
+                    gap: "14px", marginBottom: "14px" }}>
+
+        {/* Risk breakdown donut */}
         <Card>
-          <CardHeader title="FINDINGS BY SEVERITY" />
-          <div style={{ padding: "16px 0 8px", position: "relative" }}>
+          <CardHeader title="RISK BREAKDOWN"
+            right={<span style={{ color: "var(--accent3)", fontFamily: "var(--font-mono)",
+                                  fontSize: "11px" }}>{totalFindings} total</span>} />
+          <div style={{ padding: "12px 0 0", position: "relative" }}>
             {sevData.length > 0 ? (
               <>
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
-                    <Pie data={sevData} cx="50%" cy="50%"
-                         innerRadius={60} outerRadius={88}
-                         paddingAngle={3} dataKey="value"
-                         strokeWidth={0}>
-                      {sevData.map((entry, i) => (
-                        <Cell key={i} fill={entry.color}
-                              style={{ filter: `drop-shadow(0 0 5px ${entry.color}88)` }} />
-                      ))}
-                    </Pie>
-                    <DonutCenter cx={0} cy={0} score={overallScore} />
-                    <Tooltip {...tooltipStyle}
-                      formatter={(v, n) => [`${v} findings`, n]} />
-                  </PieChart>
-                </ResponsiveContainer>
-                {/* Legend */}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 14px",
-                              padding: "0 16px 12px", justifyContent: "center" }}>
+                <div style={{ position: "relative" }}>
+                  <ResponsiveContainer width="100%" height={170}>
+                    <PieChart>
+                      <Pie data={sevData} cx="50%" cy="50%"
+                           innerRadius={52} outerRadius={76}
+                           paddingAngle={3} dataKey="value" strokeWidth={0}>
+                        {sevData.map((e, i) => (
+                          <Cell key={i} fill={e.color}
+                                onClick={() => setSevFilter(f => f === e.name ? "ALL" : e.name)}
+                                style={{ filter: `drop-shadow(0 0 5px ${e.color}88)`, cursor: "pointer" }} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<ChartTip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  {/* Center score overlay */}
+                  <div style={{
+                    position: "absolute", top: "50%", left: "50%",
+                    transform: "translate(-50%, -50%)", textAlign: "center",
+                    pointerEvents: "none",
+                  }}>
+                    <div style={{ color: scoreColor(overallScore), fontSize: "26px",
+                                  fontWeight: 800, fontFamily: "var(--font-display)",
+                                  lineHeight: 1 }}>
+                      {overallScore ?? "—"}
+                    </div>
+                    <div style={{ color: "var(--accent3)", fontSize: "9px",
+                                  fontFamily: "var(--font-ui)", letterSpacing: "0.15em",
+                                  marginTop: "2px" }}>
+                      {scoreLabel(overallScore)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Legend with proportion bars */}
+                <div style={{ padding: "4px 16px 14px" }}>
                   {sevData.map(s => (
-                    <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: "50%",
-                                    background: s.color,
-                                    boxShadow: `0 0 5px ${s.color}` }} />
+                    <div key={s.name}
+                         onClick={() => setSevFilter(f => f === s.name ? "ALL" : s.name)}
+                         style={{
+                           display: "flex", alignItems: "center", gap: 8,
+                           marginBottom: 7, cursor: "pointer",
+                           opacity: sevFilter !== "ALL" && sevFilter !== s.name ? 0.4 : 1,
+                           transition: "opacity 0.15s",
+                         }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                                    background: s.color, boxShadow: `0 0 4px ${s.color}` }} />
                       <span style={{ color: "var(--accent2)", fontSize: "10px",
-                                     fontFamily: "var(--font-ui)", letterSpacing: "0.06em" }}>
-                        {s.name} <span style={{ color: s.color }}>{s.value}</span>
-                      </span>
+                                     fontFamily: "var(--font-ui)", fontWeight: 600,
+                                     letterSpacing: "0.06em", width: 56 }}>{s.name}</span>
+                      <div style={{ flex: 1, height: 3, background: "var(--border)",
+                                    borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{
+                          height: "100%", borderRadius: 2,
+                          width: totalFindings > 0 ? `${(s.value / totalFindings) * 100}%` : "0%",
+                          background: s.color, transition: "width 0.6s",
+                        }} />
+                      </div>
+                      <span style={{ color: s.color, fontSize: "11px",
+                                     fontFamily: "var(--font-mono)", fontWeight: 700,
+                                     width: 28, textAlign: "right" }}>{s.value}</span>
                     </div>
                   ))}
                 </div>
               </>
             ) : (
-              <EmptySlot icon="◎" text="No findings data" height={220}
-                         sub="Run a scan to see severity breakdown" />
+              <div style={{ height: 200, display: "flex", alignItems: "center",
+                            justifyContent: "center", color: "var(--accent3)",
+                            fontFamily: "var(--font-ui)", fontSize: "12px" }}>
+                No findings yet
+              </div>
             )}
           </div>
         </Card>
 
-        {/* Account Score Comparison */}
+        {/* Account security scores */}
         <Card>
-          <CardHeader title="ACCOUNT SECURITY SCORES" right="0 – 100" />
-          <div style={{ padding: "16px 16px 8px" }}>
+          <CardHeader title="ACCOUNT SECURITY SCORES"
+            right={<span style={{ color: "var(--accent3)", fontFamily: "var(--font-mono)",
+                                  fontSize: "11px" }}>0 – 100</span>} />
+          <div style={{ padding: "8px 8px 0" }}>
             {scoreBarData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={scoreBarData} margin={{ top: 4, right: 8, bottom: 0, left: -10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"
-                                 vertical={false} />
+              <ResponsiveContainer width="100%" height={190}>
+                <BarChart data={scoreBarData} margin={{ top: 12, right: 20, bottom: 8, left: -8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="name"
-                    tick={{ fill: "#606068", fontSize: 10, fontFamily: "var(--font-ui)" }}
-                    axisLine={false} tickLine={false} />
+                         tick={{ fill: "var(--accent2)", fontSize: 11, fontFamily: "var(--font-ui)" }}
+                         axisLine={false} tickLine={false} />
                   <YAxis domain={[0, 100]}
-                    tick={{ fill: "#606068", fontSize: 10 }}
-                    axisLine={false} tickLine={false} />
-                  <Tooltip {...tooltipStyle}
-                    formatter={(v) => [`${v}`, "Score"]} />
-                  <Bar dataKey="score" radius={[4,4,0,0]} maxBarSize={52}>
-                    {scoreBarData.map((entry, i) => (
-                      <Cell key={i} fill={entry.fill}
-                            style={{ filter: `drop-shadow(0 0 4px ${entry.fill}66)` }} />
+                         tick={{ fill: "var(--accent3)", fontSize: 9 }}
+                         axisLine={false} tickLine={false} />
+                  <Tooltip content={<ChartTip />} />
+                  <Bar dataKey="score" name="Score" radius={[5, 5, 0, 0]} maxBarSize={72}>
+                    {scoreBarData.map((e, i) => (
+                      <Cell key={i} fill={e.fill}
+                            style={{ filter: `drop-shadow(0 0 8px ${e.fill}55)` }} />
                     ))}
                     <LabelList dataKey="score" position="top"
-                      style={{ fill: "#8a8070", fontSize: 10, fontFamily: "var(--font-ui)" }} />
+                               style={{ fill: "var(--accent)", fontSize: 12,
+                                        fontFamily: "var(--font-display)", fontWeight: 800 }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <EmptySlot icon="▦" text="No account scores yet" height={220}
-                         sub="Scan accounts to compare security posture" />
+              <div style={{ height: 190, display: "flex", alignItems: "center",
+                            justifyContent: "center", color: "var(--accent3)",
+                            fontFamily: "var(--font-ui)", fontSize: "12px" }}>
+                No scan data — run a scan first
+              </div>
             )}
           </div>
         </Card>
       </div>
 
-      {/* ── Top Affected Services ── */}
-      <Card style={{ marginBottom: "16px" }}>
-        <CardHeader title="TOP AFFECTED SERVICES"
-                    right={topServices.length > 0 ? `${topServices.length} services` : undefined} />
-        <div style={{ padding: "16px 16px 8px" }}>
-          {topServices.length > 0 ? (
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={topServices} layout="vertical"
-                        margin={{ top: 0, right: 40, bottom: 0, left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"
-                               horizontal={false} />
-                <XAxis type="number" tick={{ fill: "#606068", fontSize: 10 }}
-                       axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" width={80}
-                       tick={{ fill: "#8a8070", fontSize: 11, fontFamily: "var(--font-ui)" }}
-                       axisLine={false} tickLine={false} />
-                <Tooltip {...tooltipStyle}
-                  formatter={(v) => [`${v} findings`, "Count"]} />
-                <Bar dataKey="count" fill="#ffe600" radius={[0,4,4,0]} maxBarSize={18}
-                     style={{ filter: "drop-shadow(0 0 4px rgba(255,230,0,0.3))" }}>
-                  <LabelList dataKey="count" position="right"
-                    style={{ fill: "#ffe600", fontSize: 10, fontFamily: "var(--font-display)" }} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptySlot icon="⬡" text="No service data yet" height={120}
-                       sub="Findings will be grouped by cloud service after a scan" />
-          )}
-        </div>
-      </Card>
-
-      {/* ── Category Metrics ── */}
-      {accounts.length > 0 && (() => {
-        const CAT_COLORS = {
-          Production:  { color: "#e05555", border: "rgba(224,85,85,0.3)",  bg: "rgba(224,85,85,0.06)"  },
-          Staging:     { color: "#d97b3a", border: "rgba(217,123,58,0.3)", bg: "rgba(217,123,58,0.06)" },
-          Development: { color: "#7b8cde", border: "rgba(123,140,222,0.3)",bg: "rgba(123,140,222,0.06)"},
-          Testing:     { color: "#c9a84c", border: "rgba(201,168,76,0.3)", bg: "rgba(201,168,76,0.06)" },
-          Sandbox:     { color: "#4caf7d", border: "rgba(76,175,125,0.3)", bg: "rgba(76,175,125,0.06)" },
-          General:     { color: "#8899aa", border: "rgba(136,153,170,0.3)",bg: "rgba(136,153,170,0.06)"},
-        };
-        function catStyle(cat) { return CAT_COLORS[cat] || CAT_COLORS.General; }
-        function scoreCol(s) {
-          if (s == null) return "var(--accent3)";
-          if (s >= 80) return "#4caf7d";
-          if (s >= 60) return "#c9a84c";
-          if (s >= 40) return "#d97b3a";
-          return "#e05555";
-        }
-
-        // Build category groups from accounts
-        const grouped = {};
-        accounts.forEach(a => {
-          const cat = a.category || "General";
-          if (!grouped[cat]) grouped[cat] = [];
-          grouped[cat].push(a);
-        });
-        const ORDER = ["Production","Staging","Development","Testing","Sandbox","General"];
-        const cats = [
-          ...ORDER.filter(c => grouped[c]),
-          ...Object.keys(grouped).filter(c => !ORDER.includes(c)),
-        ];
-
-        if (cats.length <= 1) return null; // no point showing if only 1 category
-
-        return (
-          <Card style={{ marginBottom: "16px" }}>
-            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
-              <span style={{ color: "var(--accent)", fontFamily: "var(--font-display)",
-                             fontSize: "13px", fontWeight: 700, letterSpacing: "0.07em" }}>
-                CATEGORY METRICS
-              </span>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(cats.length, 3)}, 1fr)`, gap: 1, background: "var(--border)" }}>
-              {cats.map(cat => {
-                const accs   = grouped[cat];
-                const s      = catStyle(cat);
-                const scanned = accs.filter(a => a.latest_score != null);
-                const avgScore = scanned.length
-                  ? Math.round(scanned.reduce((s, a) => s + a.latest_score, 0) / scanned.length)
-                  : null;
-                const crit = accs.reduce((s, a) => s + (a.finding_counts?.critical || 0), 0);
-                const high = accs.reduce((s, a) => s + (a.finding_counts?.high    || 0), 0);
-                const med  = accs.reduce((s, a) => s + (a.finding_counts?.medium  || 0), 0);
-                const low  = accs.reduce((s, a) => s + (a.finding_counts?.low     || 0), 0);
-                return (
-                  <div key={cat} style={{ padding: "18px 20px", background: "var(--surface)", borderLeft: `3px solid ${s.color}` }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                      <div>
-                        <div style={{ fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 700,
-                                      color: s.color, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 2 }}>
-                          {cat}
-                        </div>
-                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--accent3)" }}>
-                          {accs.length} account{accs.length !== 1 ? "s" : ""}
-                          {scanned.length < accs.length ? ` · ${accs.length - scanned.length} unscanned` : ""}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontFamily: "var(--font-display)", fontSize: 26, fontWeight: 800,
-                                      lineHeight: 1, color: scoreCol(avgScore) }}>
-                          {avgScore != null ? avgScore : "—"}
-                        </div>
-                        <div style={{ fontFamily: "var(--font-ui)", fontSize: 9, letterSpacing: "0.08em",
-                                      color: scoreCol(avgScore) }}>
-                          {avgScore != null ? (avgScore >= 80 ? "LOW RISK" : avgScore >= 60 ? "MED RISK" : avgScore >= 40 ? "HIGH RISK" : "CRITICAL") : "NO DATA"}
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
-                      {[["CRIT", crit, SEV_COLOR.CRITICAL], ["HIGH", high, SEV_COLOR.HIGH],
-                        ["MED",  med,  SEV_COLOR.MEDIUM],  ["LOW",  low,  SEV_COLOR.LOW]].map(([lbl, val, col]) => (
-                        <div key={lbl} style={{ textAlign: "center", padding: "6px 4px", borderRadius: 5,
-                                                background: "var(--card)", border: "1px solid var(--border)" }}>
-                          <div style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 800,
-                                        color: val > 0 ? col : "var(--accent3)", lineHeight: 1 }}>{val}</div>
-                          <div style={{ fontFamily: "var(--font-ui)", fontSize: 8, color: col,
-                                        letterSpacing: "0.1em", marginTop: 2 }}>{lbl}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        );
-      })()}
-
-      {/* ── Account Health Table ── */}
-      <Card style={{ marginBottom: "16px" }}>
-        <div style={{
-          padding: "14px 20px", borderBottom: "1px solid var(--border)",
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-        }}>
-          <span style={{ color: "var(--accent)", fontFamily: "var(--font-display)",
-                         fontSize: "13px", fontWeight: 700, letterSpacing: "0.07em" }}>
-            ACCOUNT HEALTH
-          </span>
-          {canScan && (
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={handleBulkScan} disabled={bulkScanning} className="neon-btn" style={{
-                padding: "5px 12px", background: bulkScanning ? "rgba(255,230,0,0.05)" : "transparent",
-                border: "1px solid rgba(255,230,0,0.25)", borderRadius: "5px",
-                color: bulkScanning ? "var(--accent3)" : "var(--cyan)", fontFamily: "var(--font-ui)",
-                fontSize: "11px", fontWeight: 600,
-                cursor: bulkScanning ? "not-allowed" : "pointer",
-                letterSpacing: "0.08em", opacity: bulkScanning ? 0.6 : 1,
-                display: "flex", alignItems: "center", gap: 5,
-              }}>
-                {bulkScanning && <span style={{ width: 9, height: 9, border: "1.5px solid var(--border)",
-                  borderTop: "1.5px solid var(--accent3)", borderRadius: "50%",
-                  animation: "spin 0.7s linear infinite", display: "inline-block" }} />}
-                {bulkScanning ? "SCANNING..." : "⟳ SCAN ALL"}
-              </button>
-              <button onClick={() => onNavigate("accounts")} className="neon-btn" style={{
-                padding: "5px 12px", background: "transparent",
-                border: "1px solid rgba(255,230,0,0.25)", borderRadius: "5px",
-                color: "var(--cyan)", fontFamily: "var(--font-ui)",
-                fontSize: "11px", fontWeight: 600, cursor: "pointer", letterSpacing: "0.08em",
-              }}>+ ADD ACCOUNT</button>
-            </div>
-          )}
-        </div>
-
-        {accounts.length > 0 ? (
-          <>
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "28px 1fr 120px 60px 60px 60px 60px 110px",
-              gap: "12px", padding: "9px 20px",
-              background: "var(--surface)", borderBottom: "1px solid var(--border)",
-              fontSize: "9px", color: "var(--accent3)", letterSpacing: "0.1em",
-              fontFamily: "var(--font-ui)", fontWeight: 600,
-            }}>
-              <span /><span>ACCOUNT</span>
-              <span>SCORE</span>
-              <span style={{ textAlign: "center", color: SEV_COLOR.CRITICAL }}>CRIT</span>
-              <span style={{ textAlign: "center", color: SEV_COLOR.HIGH }}>HIGH</span>
-              <span style={{ textAlign: "center", color: SEV_COLOR.MEDIUM }}>MED</span>
-              <span style={{ textAlign: "center", color: SEV_COLOR.LOW }}>LOW</span>
-              <span />
-            </div>
-            {accounts.map(account => (
-              <AccountRow key={account.id}
-                account={scanning === account.id
-                  ? { ...account, name: `${account.name} — scanning...` }
-                  : account}
-                onScanClick={handleScanAccount}
-                canScan={canScan} />
-            ))}
-          </>
-        ) : (
-          <EmptySlot icon="☁" text="No cloud accounts connected"
-                     sub="Use the button above to add your first AWS or Azure account" />
-        )}
-      </Card>
-
-      {/* ── Recent Findings with severity filter ── */}
-      <Card>
-        {/* Header + filter tabs */}
-        <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border)",
-                      display: "flex", justifyContent: "space-between",
-                      alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-          <span style={{ color: "var(--accent)", fontFamily: "var(--font-display)",
-                         fontSize: "13px", fontWeight: 700, letterSpacing: "0.07em" }}>
-            RECENT FINDINGS
-          </span>
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-            <input
-              value={findingSearch}
-              onChange={e => setFindingSearch(e.target.value)}
-              placeholder="Search..."
+      {/* ── Account Health table ── */}
+      <Card style={{ marginBottom: "14px" }}>
+        <CardHeader title="ACCOUNT HEALTH"
+          right={canScan ? (
+            <button onClick={handleBulkScan} disabled={bulkScanning} className="neon-btn"
               style={{
-                background: "var(--surface)", border: "1px solid var(--border)",
-                borderRadius: 5, padding: "4px 10px", color: "var(--accent)",
-                fontFamily: "var(--font-mono)", fontSize: 11, width: 140,
-              }}
-            />
-            <div style={{ display: "flex", gap: 4 }}>
-              {["ALL","open","acknowledged","resolved"].map(s => {
-                const active = statusFilter === s;
-                return (
-                  <button key={s} onClick={() => setStatusFilter(s)} style={{
-                    padding: "3px 8px", borderRadius: 4, cursor: "pointer",
-                    fontFamily: "var(--font-ui)", fontSize: "9px", fontWeight: 700,
-                    letterSpacing: "0.07em", border: "1px solid",
-                    background: active ? "rgba(255,230,0,0.08)" : "transparent",
-                    color: active ? "var(--cyan)" : "var(--accent3)",
-                    borderColor: active ? "rgba(255,230,0,0.3)" : "var(--border)",
-                    textTransform: "uppercase",
-                  }}>{s}</button>
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", gap: 4 }}>
-              {SEV_FILTERS.map(f => {
-                const active = sevFilter === f;
-                const col = f === "ALL" ? "var(--cyan)" : SEV_COLOR[f];
-                return (
-                  <button key={f} onClick={() => setSevFilter(f)} style={{
-                    padding: "3px 10px", borderRadius: "4px", cursor: "pointer",
-                    fontFamily: "var(--font-ui)", fontSize: "10px", fontWeight: 700,
-                    letterSpacing: "0.07em", border: "1px solid",
-                    background: active ? (f === "ALL" ? "rgba(255,230,0,0.1)" : col + "18") : "transparent",
-                    color: active ? col : "var(--accent3)",
-                    borderColor: active ? col : "var(--border)",
-                    transition: "all 0.15s",
-                  }}>{f}</button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+                padding: "4px 10px", borderRadius: 4, fontSize: 9,
+                fontFamily: "var(--font-ui)", fontWeight: 700, letterSpacing: "0.08em",
+                cursor: bulkScanning ? "not-allowed" : "pointer",
+                border: "1px solid rgba(255,230,0,0.3)",
+                background: "rgba(255,230,0,0.06)", color: "var(--cyan)",
+              }}>{bulkScanning ? "SCANNING…" : "⚡ SCAN ALL"}</button>
+          ) : null} />
 
         {/* Column headers */}
-        {filteredFindings.length > 0 && (
-          <div style={{
-            display: "grid", gridTemplateColumns: "72px 120px 120px 1fr 90px 130px",
-            gap: "12px", padding: "8px 20px",
-            background: "var(--surface)", borderBottom: "1px solid var(--border)",
-            fontSize: "9px", color: "var(--accent3)", letterSpacing: "0.1em",
-            fontFamily: "var(--font-ui)", fontWeight: 600,
-          }}>
-            <span>SEVERITY</span><span>RULE</span><span>ACCOUNT</span>
-            <span>RESOURCE / MESSAGE</span><span>STATUS</span>
-            <span style={{ textAlign: "right" }}>SCANNED</span>
-          </div>
-        )}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "14px 1fr 90px 80px 52px 52px 52px 52px 100px 90px",
+          gap: "10px", padding: "8px 16px",
+          borderBottom: "1px solid var(--border)",
+        }}>
+          {["", "ACCOUNT", "SCORE", "RISK", "CRIT", "HIGH", "MED", "LOW", "LAST SCAN", ""].map((h, i) => (
+            <div key={i} style={{
+              color: "var(--accent3)", fontSize: "9px", fontFamily: "var(--font-ui)",
+              fontWeight: 700, letterSpacing: "0.1em",
+              textAlign: i >= 4 && i <= 7 ? "center" : "left",
+            }}>{h}</div>
+          ))}
+        </div>
 
-        {filteredFindings.length > 0 ? filteredFindings.map((f, i) => {
-          const status = getStatus(f);
-          const isExp  = expanded === i;
+        {accounts.length === 0 ? (
+          <div style={{ padding: "32px", textAlign: "center", color: "var(--accent3)",
+                        fontFamily: "var(--font-ui)", fontSize: "12px" }}>
+            No accounts connected — go to Accounts to add one
+          </div>
+        ) : accounts.map(account => {
+          const score = account.latest_score;
+          const fc    = account.finding_counts || {};
+          const isScanning = scanning === account.id;
           return (
-          <div key={i} style={{
-            borderBottom: i < filteredFindings.length - 1 ? "1px solid var(--border)" : "none",
-            background: i % 2 === 0 ? "transparent" : "rgba(0,0,0,0.1)",
-          }}>
-            <div style={{
-              display: "grid", gridTemplateColumns: "72px 120px 120px 1fr 90px 130px",
-              gap: "12px", alignItems: "center",
-              padding: "10px 20px", cursor: "pointer",
-              transition: "background 0.12s",
+            <div key={account.id} style={{
+              display: "grid",
+              gridTemplateColumns: "14px 1fr 90px 80px 52px 52px 52px 52px 100px 90px",
+              gap: "10px", alignItems: "center",
+              padding: "11px 16px", borderBottom: "1px solid var(--border)",
+              transition: "background 0.15s",
             }}
-            onClick={() => setExpanded(isExp ? null : i)}
-            onMouseEnter={e => e.currentTarget.style.background = "rgba(255,230,0,0.03)"}
+            onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
             onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
 
-              <span style={{
-                fontSize: "9px", fontWeight: 700, letterSpacing: "0.06em",
-                color: SEV_COLOR[f.severity], fontFamily: "var(--font-ui)",
-                background: SEV_COLOR[f.severity] + "18",
-                padding: "3px 7px", borderRadius: "3px",
-                border: `1px solid ${SEV_COLOR[f.severity]}33`,
-                whiteSpace: "nowrap",
-              }}>{f.severity}</span>
+              {/* Cloud dot */}
+              <div style={{
+                width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
+                background: account.cloud === "aws" ? "#ff9900" : "#0089d6",
+                boxShadow: account.cloud === "aws"
+                  ? "0 0 6px rgba(255,153,0,0.5)" : "0 0 6px rgba(0,137,214,0.5)",
+              }} />
 
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px",
-                             color: "var(--accent2)", overflow: "hidden",
-                             textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {f.rule_id}
-              </span>
-
-              <span style={{
-                fontSize: "11px", color: "var(--accent3)",
-                background: "var(--surface)", padding: "2px 7px",
-                borderRadius: "3px", fontFamily: "var(--font-ui)",
-                border: "1px solid var(--border)",
-                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              }}>{f.account_name}</span>
-
-              <div style={{ minWidth: 0 }}>
-                <div style={{ color: "var(--accent)", fontSize: "12px", fontWeight: 500,
-                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {f.resource_name}
+              {/* Name + cloud/region */}
+              <div>
+                <div style={{ color: "var(--accent)", fontSize: "13px",
+                              fontWeight: 600, fontFamily: "var(--font-ui)" }}>
+                  {account.name}
                 </div>
                 <div style={{ color: "var(--accent3)", fontSize: "10px",
-                              fontFamily: "var(--font-mono)", marginTop: "2px",
-                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {(f.message || "").slice(0, 80)}{(f.message || "").length > 80 ? "…" : ""}
+                              fontFamily: "var(--font-mono)", marginTop: 1 }}>
+                  {account.cloud.toUpperCase()}
+                  {account.region ? ` · ${account.region}` : ""}
+                  {account.category && account.category !== "General"
+                    ? ` · ${account.category}` : ""}
                 </div>
               </div>
 
-              <span style={{
-                fontSize: "10px", fontWeight: 600, letterSpacing: "0.06em",
-                color: status === "resolved"     ? "#39ff14"
-                     : status === "acknowledged" ? "#ffe600"
-                     : "var(--accent3)",
-                fontFamily: "var(--font-ui)", textTransform: "uppercase",
-              }}>{status}</span>
+              {/* Score */}
+              <div>
+                <span style={{ color: scoreColor(score), fontSize: "18px",
+                               fontWeight: 800, fontFamily: "var(--font-display)" }}>
+                  {score ?? "—"}
+                </span>
+                {score != null && (
+                  <div style={{ marginTop: 3, height: "3px",
+                                background: "var(--border)", borderRadius: "2px" }}>
+                    <div style={{ height: "100%", borderRadius: "2px",
+                                  width: `${score}%`, background: scoreColor(score),
+                                  boxShadow: `0 0 5px ${scoreColor(score)}` }} />
+                  </div>
+                )}
+              </div>
 
-              <span style={{ color: "var(--accent3)", fontSize: "10px",
-                             fontFamily: "var(--font-mono)", textAlign: "right",
-                             whiteSpace: "nowrap" }}>
-                {f.scanned_at}
-              </span>
+              {/* Risk label */}
+              <div style={{ color: scoreColor(score), fontSize: "10px",
+                            fontFamily: "var(--font-ui)", fontWeight: 700,
+                            letterSpacing: "0.06em" }}>
+                {scoreLabel(score)}
+              </div>
+
+              {/* C / H / M / L */}
+              {["critical","high","medium","low"].map(sev => (
+                <div key={sev} style={{ textAlign: "center" }}>
+                  <span style={{
+                    color: (fc[sev] || 0) > 0 ? SEV_COLOR[sev.toUpperCase()] : "var(--accent3)",
+                    fontSize: "14px", fontWeight: (fc[sev] || 0) > 0 ? 700 : 400,
+                    fontFamily: "var(--font-display)",
+                  }}>{fc[sev] ?? 0}</span>
+                </div>
+              ))}
+
+              {/* Last scan */}
+              <div style={{ color: "var(--accent3)", fontSize: "10px",
+                            fontFamily: "var(--font-mono)" }}>
+                {timeAgo(account.last_scanned_at)}
+              </div>
+
+              {/* Scan button */}
+              {canScan ? (
+                <button onClick={() => handleScan(account)}
+                  disabled={isScanning || bulkScanning}
+                  className="neon-btn"
+                  style={{
+                    padding: "5px 12px", border: "1px solid rgba(255,230,0,0.3)",
+                    borderRadius: "4px", background: "transparent",
+                    color: isScanning ? "var(--accent3)" : "var(--cyan)",
+                    fontFamily: "var(--font-ui)", fontSize: "10px",
+                    fontWeight: 700, letterSpacing: "0.06em",
+                    cursor: (isScanning || bulkScanning) ? "not-allowed" : "pointer",
+                    opacity: bulkScanning && !isScanning ? 0.5 : 1,
+                  }}>
+                  {isScanning ? "SCANNING…" : "SCAN NOW"}
+                </button>
+              ) : (
+                <span style={{ color: "var(--accent3)", fontSize: "9px",
+                               fontFamily: "var(--font-ui)", letterSpacing: "0.06em" }}>
+                  READ ONLY
+                </span>
+              )}
             </div>
-
-            {isExp && (
-              <div style={{
-                padding: "0 20px 16px",
-                borderTop: "1px solid var(--border)",
-                background: "rgba(0,0,0,0.2)",
-              }}>
-                <div style={{
-                  paddingTop: "14px", display: "grid",
-                  gridTemplateColumns: "1fr 1fr", gap: "16px",
-                }}>
-                  <div>
-                    <div style={{
-                      color: "var(--accent3)", fontSize: "10px",
-                      letterSpacing: "0.1em", marginBottom: "5px",
-                      fontFamily: "var(--font-ui)",
-                    }}>FINDING DETAIL</div>
-                    <p style={{
-                      color: "var(--accent2)", fontSize: "12px",
-                      fontFamily: "var(--font-mono)", lineHeight: 1.6, margin: 0,
-                    }}>{f.message}</p>
-                  </div>
-                  <div>
-                    <div style={{
-                      color: "var(--accent3)", fontSize: "10px",
-                      letterSpacing: "0.1em", marginBottom: "5px",
-                      fontFamily: "var(--font-ui)",
-                    }}>REMEDIATION</div>
-                    <p style={{
-                      color: "var(--accent)", fontSize: "12px",
-                      fontFamily: "var(--font-mono)", lineHeight: 1.6, margin: 0,
-                    }}>{f.remediation || "No remediation guidance available."}</p>
-                    <div style={{ display: "flex", gap: "8px", marginTop: "12px", flexWrap: "wrap" }}>
-                      <button onClick={(e) => { e.stopPropagation(); handleStatus(f, "resolved"); }} style={{
-                        padding: "5px 12px", border: "1px solid #39ff14",
-                        borderRadius: "4px", background: "transparent",
-                        color: "#39ff14", cursor: "pointer",
-                        fontFamily: "var(--font-ui)", fontSize: "11px", fontWeight: 600,
-                      }}>MARK RESOLVED</button>
-                      <button onClick={(e) => { e.stopPropagation(); handleStatus(f, "acknowledged"); }} style={{
-                        padding: "5px 12px", border: "1px solid #ffe600",
-                        borderRadius: "4px", background: "transparent",
-                        color: "#ffe600", cursor: "pointer",
-                        fontFamily: "var(--font-ui)", fontSize: "11px", fontWeight: 600,
-                      }}>ACKNOWLEDGE</button>
-                      <button onClick={(e) => { e.stopPropagation(); handleStatus(f, "open"); }} style={{
-                        padding: "5px 12px", border: "1px solid var(--border)",
-                        borderRadius: "4px", background: "transparent",
-                        color: "var(--accent3)", cursor: "pointer",
-                        fontFamily: "var(--font-ui)", fontSize: "11px",
-                      }}>REOPEN</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
           );
-        }) : (
-          <EmptySlot icon="🛡"
-            text={recentFindings.length === 0 ? "No findings yet" : "No matching findings"}
-            sub={recentFindings.length === 0 ? "Run a scan to check your cloud security posture" : "Try a different filter or search term"} />
-        )}
+        })}
       </Card>
 
+      {/* ── Findings + Top Services ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 260px",
+                    gap: "14px", marginBottom: "14px" }}>
+
+        {/* Findings panel */}
+        <Card>
+          <CardHeader title={`FINDINGS ${filteredFindings.length !== recentFindings.length
+            ? `(${filteredFindings.length} of ${recentFindings.length})` : `(${recentFindings.length})`}`}
+            right={
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+                {/* Severity pills */}
+                {["ALL","CRITICAL","HIGH","MEDIUM","LOW"].map(s => (
+                  <button key={s} onClick={() => setSevFilter(s)} style={{
+                    padding: "3px 7px", borderRadius: 4, fontSize: 9,
+                    fontFamily: "var(--font-ui)", fontWeight: 700, letterSpacing: "0.06em",
+                    cursor: "pointer",
+                    border: `1px solid ${sevFilter === s
+                      ? (SEV_COLOR[s] || "var(--cyan)") : "var(--border)"}`,
+                    background: sevFilter === s
+                      ? `${SEV_COLOR[s] || "#ffe600"}14` : "transparent",
+                    color: sevFilter === s
+                      ? (SEV_COLOR[s] || "var(--cyan)") : "var(--accent3)",
+                    transition: "all 0.15s",
+                  }}>{s}</button>
+                ))}
+                {/* Status filter */}
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                  style={{
+                    padding: "3px 6px", borderRadius: 4, fontSize: 9,
+                    fontFamily: "var(--font-ui)", fontWeight: 700,
+                    background: "var(--card)", border: "1px solid var(--border)",
+                    color: "var(--accent3)", cursor: "pointer",
+                  }}>
+                  <option value="ALL">ALL STATUS</option>
+                  <option value="open">OPEN</option>
+                  <option value="acknowledged">ACKNOWLEDGED</option>
+                  <option value="resolved">RESOLVED</option>
+                </select>
+                {/* Search */}
+                <input value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="search…"
+                  style={{
+                    padding: "3px 8px", borderRadius: 4, fontSize: 10,
+                    fontFamily: "var(--font-mono)",
+                    background: "var(--surface)", border: "1px solid var(--border)",
+                    color: "var(--accent)", width: 120,
+                  }} />
+              </div>
+            } />
+
+          {/* Table column headers */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "88px 130px 58px 1fr 100px 88px 20px",
+            gap: "10px", padding: "7px 16px",
+            borderBottom: "1px solid var(--border)",
+            background: "var(--surface)",
+          }}>
+            {["SEV", "RULE ID", "SERVICE", "RESOURCE", "ACCOUNT", "STATUS", ""].map((h, i) => (
+              <div key={i} style={{ color: "var(--accent3)", fontSize: "9px",
+                                    fontFamily: "var(--font-ui)", fontWeight: 700,
+                                    letterSpacing: "0.1em" }}>{h}</div>
+            ))}
+          </div>
+
+          {filteredFindings.length === 0 ? (
+            <div style={{ padding: "40px", textAlign: "center", color: "var(--accent3)",
+                          fontFamily: "var(--font-ui)", fontSize: "12px" }}>
+              {recentFindings.length === 0
+                ? "No findings — run a scan to populate this view"
+                : "No findings match the current filter"}
+            </div>
+          ) : (
+            <div style={{ maxHeight: "500px", overflowY: "auto" }}>
+              {filteredFindings.map((f, i) => {
+                const key = `${f.rule_id}::${f.resource_id}::${i}`;
+                return (
+                  <FindingRow key={key} f={f}
+                    isExpanded={expanded === key}
+                    onToggle={() => setExpanded(p => p === key ? null : key)}
+                    onStatusChange={s => handleStatus(f, s)}
+                    currentStatus={getStatus(f)} />
+                );
+              })}
+            </div>
+          )}
+
+          {filteredFindings.length > 0 && (
+            <div style={{ padding: "7px 16px", borderTop: "1px solid var(--border)",
+                          color: "var(--accent3)", fontSize: "10px",
+                          fontFamily: "var(--font-mono)" }}>
+              Click a row to expand — see message, remediation, frameworks &amp; update status
+            </div>
+          )}
+        </Card>
+
+        {/* Top affected services */}
+        <Card>
+          <CardHeader title="TOP SERVICES"
+            right={<span style={{ color: "var(--accent3)", fontSize: "11px",
+                                  fontFamily: "var(--font-mono)" }}>
+              {topServices.length} services
+            </span>} />
+          <div style={{ padding: "14px 16px" }}>
+            {topServices.length === 0 ? (
+              <div style={{ padding: "32px 0", textAlign: "center",
+                            color: "var(--accent3)", fontFamily: "var(--font-ui)", fontSize: "12px" }}>
+                No data
+              </div>
+            ) : topServices.map(({ name, count }) => {
+              const maxCount = topServices[0]?.count || 1;
+              const pct = (count / maxCount) * 100;
+              return (
+                <div key={name} style={{ marginBottom: "11px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between",
+                                alignItems: "center", marginBottom: "4px" }}>
+                    <span style={{ color: "var(--accent)", fontSize: "12px",
+                                   fontFamily: "var(--font-ui)", fontWeight: 600 }}>{name}</span>
+                    <span style={{ color: "var(--cyan)", fontSize: "11px",
+                                   fontFamily: "var(--font-mono)", fontWeight: 700 }}>{count}</span>
+                  </div>
+                  <div style={{ height: "5px", background: "var(--border)",
+                                borderRadius: "3px", overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%", borderRadius: "3px",
+                      width: `${pct}%`,
+                      background: `linear-gradient(90deg, ${SEV_COLOR.HIGH}, ${SEV_COLOR.MEDIUM})`,
+                      transition: "width 0.6s ease",
+                    }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      </div>
+
+      {/* ── Score trend ── */}
+      {trend.length > 1 && (
+        <Card>
+          <CardHeader title="SECURITY SCORE TREND"
+            right={<span style={{ color: "var(--accent3)", fontSize: "11px",
+                                  fontFamily: "var(--font-mono)" }}>
+              {trend.length} data points
+            </span>} />
+          <div style={{ padding: "8px 8px 0" }}>
+            <ResponsiveContainer width="100%" height={150}>
+              <LineChart data={trend} margin={{ top: 8, right: 24, bottom: 8, left: -8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="date"
+                       tick={{ fill: "var(--accent3)", fontSize: 9, fontFamily: "var(--font-mono)" }}
+                       axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]}
+                       tick={{ fill: "var(--accent3)", fontSize: 9 }}
+                       axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTip />} />
+                {trendAccounts.map((acc, i) => (
+                  <Line key={acc} type="monotone" dataKey={acc} name={acc}
+                        stroke={trendColors[i % trendColors.length]}
+                        strokeWidth={2} dot={false} connectNulls />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
