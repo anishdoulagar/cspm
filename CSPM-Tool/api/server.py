@@ -634,7 +634,13 @@ async def get_dashboard(
             "scanned_at":   scan["created_at"][:16].replace("T", " "),
         }
 
-    # Single bulk fetch for all needed scan findings
+    # Single bulk fetch for all needed scan findings.
+    # Take up to PER_ACCOUNT findings per account so every account is
+    # represented fairly regardless of how many other accounts exist.
+    PER_ACCOUNT = 200
+    TOTAL_CAP   = 1000
+    sev_order   = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+
     recent_findings = []
     if scan_ids_needed:
         rows = await conn.fetch(
@@ -652,20 +658,21 @@ async def get_dashboard(
             if isinstance(findings, str):
                 import json as _json
                 findings = _json.loads(findings)
-            for f in findings:
+            # Sort this account's findings by severity before slicing
+            findings_sorted = sorted(
+                findings,
+                key=lambda f: sev_order.get(f.get("severity", "LOW"), 3)
+            )
+            for f in findings_sorted[:PER_ACCOUNT]:
                 recent_findings.append({
                     **f,
                     "account_name": meta["account_name"],
                     "scanned_at":   meta["scanned_at"],
                 })
-                if len(recent_findings) >= 50:
-                    break
-            if len(recent_findings) >= 50:
-                break
 
-    # Sort: CRITICAL first, then HIGH, MEDIUM, LOW
-    sev_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+    # Final sort across all accounts: CRITICAL first, then HIGH, MEDIUM, LOW
     recent_findings.sort(key=lambda f: sev_order.get(f.get("severity", "LOW"), 3))
+    recent_findings = recent_findings[:TOTAL_CAP]
 
     return {
         "overall_score":    overall_score,
